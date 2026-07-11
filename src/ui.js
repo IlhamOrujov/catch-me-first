@@ -37,6 +37,7 @@ export const UI = {
       this.userSay(t);
       this.els.input.value = "";
       this.onSend?.(t);
+      State.bus.emit("chat:sent");   // main re-locks the pointer if in first-person
     };
     this.els.sendBtn?.addEventListener("click", send);
     this.els.input?.addEventListener("keydown", (e) => {

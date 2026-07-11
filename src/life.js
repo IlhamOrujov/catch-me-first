@@ -73,6 +73,8 @@ const GENERIC = { expr: "neutral", dur: [6, 12] };   // for improvised/unknown a
 
 const IDLE_LINES = ["hmm~", "la la la…", "so quiet today", "i'm kinda bored", "what to do, what to do", "*hums a little tune*", "ugh i should really study", "i wonder what Deku's up to", "this apartment is a mess lol", "…", "*stretches*"];
 const REACT_LINES = ["oh, hey~", "you're back?", "hi hi", "*glances over* need something?", "hmm? what's up?", "*smiles at you*", "don't sneak up like that!", "oh! didn't see you there"];
+// closer / more aware — fired when you step right into her personal space
+const NOTICE_LINES = ["…you're kinda close", "*looks up at you*", "oh— hi you", "mm? right there huh", "*tilts head at you* what's up?", "*notices you* hey~", "you need something?", "*leans back a bit* personal space~", "you always this close? hehe", "*peeks up* yes~?"];
 
 export class Life {
   constructor(refs) {
@@ -391,22 +393,25 @@ export class Life {
     const akuu = this.refs.akuu;
     const p = this._playerPos();
     const d = dist2D(akuu.root.position, p);
+    this.reactCd -= dt;
     if (d < 2.8) {
       akuu.lookAtPoint?.(p);                                   // track the player with her head
-      // greet the moment the player comes close after being away — but don't follow forever
-      if (this._playerWasFar && d < 1.7) {
-        this._playerWasFar = false;
-        if (this.state !== "walking") akuu.setExpression(pick(["happy", "smile", "surprised", "blush"]));
-        this.needs.social = clamp(this.needs.social + 6);
-        if (State.settings.idleChatter && Date.now() - (this._lastLine || 0) > 12000) this._say(pick(REACT_LINES));
+      // she visibly turns her body toward you when you're close and she's free — noticing you
+      if (d < 2.1 && this.state !== "walking" && !akuu.isBusy?.()) {
+        akuu.faceAngle?.(Math.atan2(p.x - akuu.root.position.x, p.z - akuu.root.position.z));
       }
-      this.reactCd -= dt;
-      if (d < 1.4 && this.reactCd <= 0) {
-        this.reactCd = 24 + Math.random() * 26;
-        if (this.state !== "walking" && Math.random() < 0.5) akuu.setExpression(pick(["happy", "smile", "shy", "blush", "smug"]));
+      // acknowledgement beat when you step into her personal space (cooldown → never spammy)
+      if (d < 1.8 && this.reactCd <= 0) {
+        this.reactCd = 9 + Math.random() * 7;
+        const away = this._playerWasFar; this._playerWasFar = false;
+        if (this.state !== "walking")
+          akuu.setExpression(pick(away ? ["happy", "surprised", "smile"] : ["surprised", "blush", "smile", "smug"]));
+        this.needs.social = clamp(this.needs.social + (away ? 6 : 3));
+        if (State.settings.idleChatter && Date.now() - (this._lastLine || 0) > 8000)
+          this._say(pick(away ? REACT_LINES : NOTICE_LINES));
       }
     } else if (d > 4) {
-      this._playerWasFar = true;                               // reset so she greets again next time
+      this._playerWasFar = true;                               // reset so she greets warmly next time
     }
   }
 

@@ -250,7 +250,14 @@ export const Brain = {
     const res = viaProxy
       ? await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: "groq", model: s.model, body }) })
       : await fetch(GROQ_URL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` }, body: JSON.stringify(body) });
-    if (!res.ok) { const t = await res.text().catch(() => ""); const daily = /per day|TPD/i.test(t); throw new Error(`GROQ_${res.status}${daily ? "_DAILY" : ""}: ${t.slice(0, 150)}`); }
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      // Static host with no serverless function: /api/chat isn't real, so the host
+      // answers the POST with 404/405 (often an nginx HTML page). Don't dump HTML —
+      // tell the player to add their own key.
+      if (viaProxy && (res.status === 404 || res.status === 405 || /<html|<!doctype/i.test(t))) throw new Error("NO_BACKEND");
+      const daily = /per day|TPD/i.test(t); throw new Error(`GROQ_${res.status}${daily ? "_DAILY" : ""}: ${t.slice(0, 150)}`);
+    }
     const data = await res.json();
     const msg = data.choices?.[0]?.message || {};
     const toolCalls = (msg.tool_calls || []).map((tc) => { let args = {}; try { args = JSON.parse(tc.function.arguments || "{}"); } catch {} return { name: tc.function.name, args }; });
@@ -301,7 +308,11 @@ export const Brain = {
     const res = viaProxy
       ? await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: "gemini", model: s.geminiModel, body }) })
       : await fetch(GEMINI_URL(s.geminiModel, key), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (!res.ok) { const t = await res.text().catch(() => ""); const daily = /per day|PerDay/i.test(t); throw new Error(`GEMINI_${res.status}${daily ? "_DAILY" : ""}: ${t.slice(0, 150)}`); }
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      if (viaProxy && (res.status === 404 || res.status === 405 || /<html|<!doctype/i.test(t))) throw new Error("NO_BACKEND");
+      const daily = /per day|PerDay/i.test(t); throw new Error(`GEMINI_${res.status}${daily ? "_DAILY" : ""}: ${t.slice(0, 150)}`);
+    }
     const data = await res.json();
     const parts = data.candidates?.[0]?.content?.parts || [];
     let content = ""; const toolCalls = [];
@@ -424,7 +435,8 @@ export const Brain = {
   _handleError(e) {
     console.error("[brain]", e);
     const ctx = this.ctx; const msg = String(e.message);
-    if (msg.includes("NO_GEMINI_KEY")) ctx?.ui.systemLine("⚠️ No Gemini key set. Add one in the 🛠️ Admin panel, or switch the provider back to Groq.");
+    if (msg.includes("NO_BACKEND")) { ctx?.ui.systemLine("💤 This site has no AI backend, so Akuu can't think here yet. Open ⚙️ settings and paste a free Groq key (groq.com → API Keys) — it stays in your browser and wakes her up instantly."); ctx?.akuu.setExpression("sleepy"); return; }
+    else if (msg.includes("NO_GEMINI_KEY")) ctx?.ui.systemLine("⚠️ No Gemini key set. Add one in the 🛠️ Admin panel, or switch the provider back to Groq.");
     else if (msg.includes("NO_KEY")) { ctx?.ui.systemLine("⚠️ No API key set. Open ⚙️ settings (or Admin) and paste your Groq key to wake Akuu up."); ctx?.akuu.setExpression("sleepy"); }
     else if (msg.includes("401") || msg.includes("403")) ctx?.ui.systemLine("⚠️ Your API key was rejected. Double-check it in ⚙️ / Admin.");
     else if (msg.includes("_DAILY")) { const alt = (State.settings.provider === "groq" && !String(State.settings.model).includes("8b")) ? " Try “Llama 3.1 8B (instant)” in ⚙️ — separate daily budget." : ""; ctx?.ui.systemLine("🌙 Today's free token budget is used up on every one of your keys for this model (resets daily)." + alt); ctx?.akuu.setExpression("sleepy"); }

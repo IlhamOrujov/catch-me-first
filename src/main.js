@@ -213,7 +213,9 @@ RAG.init({ ui: UI }).catch((e) => console.warn("RAG init failed", e));
 ctx.rag = RAG;
 Lifesim.init({ ui: UI, events: Events });
 ctx.lifesim = Lifesim;
-Phone.init({ brain: Brain, ui: UI, audio: Audio, akuu, lifesim: Lifesim });
+Phone.init({ brain: Brain, ui: UI, audio: Audio, akuu, lifesim: Lifesim, minigames: Minigames });
+// opening the phone frees the mouse so you can use it (and never traps the cursor)
+State.bus.on("phone:toggled", (open) => { if (open && camCtl.fp?.isLocked) camCtl.fp.unlock(); });
 ctx.phone = Phone;
 Build.init({ scene, camera, renderer, camCtl, lifesim: Lifesim, ui: UI, brain: Brain, akuu });
 ctx.build = Build;
@@ -467,10 +469,28 @@ addEventListener("keydown", (e) => {
     if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA")) return;
     if (document.querySelector("#promptStudio.open, #quickSettings.open")) return;
     e.preventDefault();
+    if (camCtl.fp?.isLocked) camCtl.fp.unlock();   // free the cursor so you can type
     const input = document.getElementById("chatInput");
     if (input) { input.focus(); }
   }
 });
+
+// After sending in first-person, resume mouse-look (re-lock the pointer). The send
+// runs inside the Enter keydown / button click, so this counts as a user gesture.
+State.bus.on("chat:sent", () => {
+  if (camCtl.mode !== "first") return;
+  document.getElementById("chatInput")?.blur();
+  // request lock directly so we can swallow the async rejection browsers throw when
+  // there's no user gesture / wrong document (PointerLockControls.lock() ignores it).
+  try { const p = (camCtl.fp.domElement || renderer.domElement)?.requestPointerLock?.(); if (p?.catch) p.catch(() => {}); } catch {}
+});
+
+// Esc always frees the mouse and leaves the chat — never trap the cursor.
+addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  document.getElementById("chatInput")?.blur();
+  if (camCtl.fp?.isLocked) camCtl.fp.unlock();
+}, true);
 
 // start audio on first interaction (autoplay policy)
 const kick = () => { Audio.resume(); if (State.settings.musicEnabled) Audio.startMusic(); window.removeEventListener("pointerdown", kick); window.removeEventListener("keydown", kick); };
