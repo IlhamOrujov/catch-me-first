@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Catch Me First ♡</title>
+<meta name="theme-color" content="#0d0a12" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Catch Me First" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="stylesheet" href="./styles/game.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💗</text></svg>" />
+<link rel="apple-touch-icon" href="./icon-192.png" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <canvas id="scene"></canvas>
+
+  <!-- Top HUD -->
+  <div id="hud">
+    <div class="hud-left">
+      <div class="hud-title">CATCH<span>ME</span>FIRST</div>
+      <div class="meters">
+        <div class="meter"><label>♡ Affection</label><div class="bar"><i id="hudAffection"></i></div></div>
+        <div class="meter"><label>✦ Trust</label><div class="bar trust"><i id="hudTrust"></i></div></div>
+      </div>
+    </div>
+    <div class="hud-right">
+      <div class="hud-chip" id="hudStage">New Roommates</div>
+      <div class="hud-chip" id="hudMood">🙂 neutral</div>
+      <div class="hud-chip" id="hudTime">6:30 PM</div>
+      <button class="icon-btn" id="needsBtn" title="Alice's needs & mood">📊</button>
+      <button class="icon-btn" id="diaryBtn" title="Her diary & letters">📔</button>
+      <button class="icon-btn" id="hotspotBtn" title="Hotspot Editor — place where Alice goes">🧭</button>
+      <button class="icon-btn" id="promptBtn" title="Prompt Studio — write Akuu's mind yourself">📝</button>
+      <button class="icon-btn" id="gearBtn" title="Quick settings">⚙️</button>
+      <a class="icon-btn" href="./admin.html" target="_blank" title="Admin panel">🛠️</a>
+    </div>
+  </div>
+
+  <div id="fps"></div>
+
+  <!-- Chat dock -->
+  <div id="chatDock">
+    <div id="chatLog"></div>
+    <div id="chatBar">
+      <span id="thinkingDot" title="Akuu is thinking…"><i></i><i></i><i></i></span>
+      <input id="chatInput" placeholder="Say something to Akuu…" autocomplete="off" />
+      <button id="sendBtn">Send</button>
+    </div>
+  </div>
+
+  <!-- Phone -->
+  <div id="phone">
+    <div class="phone-notch"></div>
+    <div class="phone-head">📱 Messages</div>
+    <div id="phoneLog"></div>
+  </div>
+
+  <!-- first-person crosshair -->
+  <div id="crosshair"></div>
+
+  <!-- camera mode switcher -->
+  <div id="camBar">
+    <span id="camMode">🎥 Overview</span>
+    <button data-cammode="orbit" title="Overview (drag & zoom)">🎥</button>
+    <button data-cammode="first" title="First-person — WASD + mouse (click to look)">🚶</button>
+    <button data-cammode="third" title="Third-person — drive Deku with WASD">🧍</button>
+    <span class="cam-hint">press <b>C</b> to cycle</span>
+  </div>
+
+  <!-- transient layers -->
+  <div id="toasts"></div>
+  <div id="modalRoot"></div>
+
+  <!-- Quick settings -->
+  <div id="quickSettings">
+    <div class="qs-card">
+      <button id="quickClose" class="note-x">×</button>
+      <h3>⚙️ Quick Settings</h3>
+      <label>Groq API Key</label>
+      <input id="qsKey" type="password" placeholder="gsk_..." />
+      <label>Model</label>
+      <select id="qsModel">
+        <option value="llama-3.3-70b-versatile">Llama 3.3 70B (recommended)</option>
+        <option value="llama-3.1-8b-instant">Llama 3.1 8B (instant)</option>
+        <option value="moonshotai/kimi-k2-instruct">Kimi K2 (creative)</option>
+        <option value="qwen/qwen3-32b">Qwen 3 32B</option>
+        <option value="deepseek-r1-distill-llama-70b">DeepSeek R1 Distill</option>
+        <option value="gemma2-9b-it">Gemma 2 9B</option>
+      </select>
+      <p class="qs-hint">Get a free key at <b>console.groq.com/keys</b>. Full controls in the 🛠️ Admin panel.</p>
+      <button id="qsSave" class="primary">Save ♡</button>
+    </div>
+  </div>
+
+  <!-- Alice's needs & mood -->
+  <div id="needsPanel" class="side-panel">
+    <div class="sp-head">📊 Alice right now <button class="note-x" data-close="needsPanel">×</button></div>
+    <div id="needsBody"></div>
+  </div>
+
+  <!-- Her diary & letters -->
+  <div id="diaryPanel" class="side-panel wide">
+    <div class="sp-head">📔 Her diary <button class="note-x" data-close="diaryPanel">×</button></div>
+    <div id="diaryBody"></div>
+  </div>
+
+  <!-- Hotspot editor -->
+  <div id="hotspotEditor">
+    <div class="he-head">🧭 Hotspot Editor <button id="heClose" class="note-x">×</button></div>
+    <p class="he-hint">Pick a spot, then <b>Place mode → click the floor</b> to move it where the real bed / sofa / kitchen is. Tune facing & radius. Markers show live.</p>
+    <select id="heSelect" class="txt-sel"></select>
+    <div class="he-row"><label>Facing</label><input type="range" id="heRot" min="-3.14" max="3.14" step="0.05"></div>
+    <div class="he-row"><label>Radius</label><input type="range" id="heRadius" min="0.3" max="2" step="0.05"></div>
+    <div class="he-row"><label>Label</label><input type="text" id="heLabel" class="txt"></div>
+    <div class="he-row"><label>Actions</label><input type="text" id="heActions" class="txt" placeholder="comma,separated"></div>
+    <div class="he-btns">
+      <button id="hePlace" class="ps-mini">📍 Place mode: OFF</button>
+      <button id="heGoto" class="ps-mini">🚶 Send Alice</button>
+      <button id="heAdd" class="ps-mini">＋ add</button>
+      <button id="heDel" class="ps-mini">🗑</button>
+      <button id="heSave" class="ps-mini primary">Save</button>
+    </div>
+    <div class="he-pos" id="hePos"></div>
+  </div>
+
+  <!-- Prompt Studio: author the whole system prompt + filters yourself -->
+  <div id="promptStudio">
+    <div class="ps-card">
+      <button id="psClose" class="note-x">×</button>
+      <h3>📝 Prompt Studio</h3>
+      <p class="ps-hint">Write Akuu's mind yourself. In <b>Custom</b> mode, your text below becomes her <b>entire</b> system prompt — nothing added by anyone else. Describe who she is and what she can do. Click a <span class="tok">{token}</span> to insert it.</p>
+      <div class="ps-modes">
+        <label><input type="radio" name="pMode" value="auto" /> Built-in prompt</label>
+        <label><input type="radio" name="pMode" value="custom" /> ✍️ Custom — I write it all</label>
+      </div>
+      <div class="ps-tokrow" id="psTokens"></div>
+      <textarea id="psPrompt" spellcheck="false" placeholder="You are {name}, {player}'s university roommate.&#10;You can: {abilities}.&#10;Your vibe: {personality}.&#10;{filter}"></textarea>
+      <div class="ps-filter">
+        <h4>Content filter — yours to write</h4>
+        <div class="ps-filter-row">
+          <select id="psFilterSel" class="txt-sel"></select>
+          <button id="psFilterAdd" class="ps-mini">＋ new</button>
+          <button id="psFilterDel" class="ps-mini">🗑 delete</button>
+        </div>
+        <textarea id="psFilterText" spellcheck="false" placeholder="What this filter level tells her (leave 'Off' selected for no filter at all)…"></textarea>
+      </div>
+      <button id="psSave" class="primary">Save ♡</button>
+    </div>
+  </div>
+
+  <div id="hint">🖱️ drag to look · scroll to zoom · <b>C</b> to switch camera · <b>WASD</b> to walk · type to talk to Akuu</div>
+
+  <!-- local dev keys (git/vercel-ignored). Absent on deploy → app uses /api/chat proxy.
+       The 404 you may see for this in devtools on a deploy is harmless/expected. -->
+  <script src="./src/keys.local.js"></script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

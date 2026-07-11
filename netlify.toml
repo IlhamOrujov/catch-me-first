@@ -1,0 +1,41 @@
+# ============================================================================
+#  Catch Me First — Netlify config
+#  Static site (no build step) + one serverless function (/api/chat) that keeps
+#  the LLM API keys server-side. Publishes the repo root as-is.
+#  The real keys live in src/keys.local.js which is .gitignored, so a git-based
+#  Netlify deploy never uploads them — the app falls back to the /api/chat proxy.
+# ============================================================================
+
+[build]
+  publish = "."
+  functions = "netlify/functions"
+  # no build command — the game is plain ES modules loaded via an importmap
+
+[functions]
+  node_bundler = "esbuild"
+
+# ---- caching: code always fresh, big models cached hard (they're immutable) ----
+[[headers]]
+  for = "/src/*"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"
+
+[[headers]]
+  for = "/styles/*"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"
+
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/vroid-drop/*"
+  [headers.values]
+    Cache-Control = "no-cache, must-revalidate"

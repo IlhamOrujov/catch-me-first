@@ -1,0 +1,9 @@
+# NEVER deploy real keys or dev-only files
+src/keys.local.js
+KEYS-BACKUP*.txt
+server.py
+OVERNIGHT-NOTES.md
+.claude
+.DS_Store
+node_modules
+.vercel

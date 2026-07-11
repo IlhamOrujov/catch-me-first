@@ -1,0 +1,10 @@
+# secrets — real API keys must never be committed
+src/keys.local.js
+KEYS-BACKUP*.txt
+
+# tooling
+node_modules
+.vercel
+.netlify
+.DS_Store
+*.log

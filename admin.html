@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Akuu — Super Admin ♡</title>
+<link rel="stylesheet" href="./styles/admin.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛠️</text></svg>" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.169.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">
+      <span class="logo">🛠️</span>
+      <div>
+        <div class="brand-title">AKUU CONTROL CENTER</div>
+        <div class="brand-sub">Super Admin · <span id="hName">Akuu</span></div>
+      </div>
+    </div>
+    <div class="live-meters">
+      <div class="lm">♡ Affection <b id="hAff">40</b></div>
+      <div class="lm">✦ Trust <b id="hTrust">50</b></div>
+      <div class="lm">🎭 Mood <b id="hMood">—</b></div>
+      <div class="lm">📈 <b id="hFps">0 fps</b></div>
+      <a class="open-game" href="./index.html" target="_blank">▶ Open Game</a>
+    </div>
+  </header>
+
+  <div id="shell">
+    <nav id="sidebar"><div id="navList"></div>
+      <div class="nav-foot">Changes apply <b>live</b> to the open game ♡</div>
+    </nav>
+    <main id="content"></main>
+  </div>
+
+  <div id="toasts"></div>
+  <script type="module" src="./src/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "catch-me-first",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Catch Me First — a slice-of-life game with an autonomous anime AI roommate (Three.js + Groq/Gemini).",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "dev": "python3 server.py"
+  }
+}
