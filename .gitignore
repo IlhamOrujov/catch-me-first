@@ -8,3 +8,7 @@ node_modules
 .netlify
 .DS_Store
 *.log
+
+# Developer Mode local notes/exports (may hold private notes; read from local repo)
+DEV-NOTES.md
+dev-exports/
