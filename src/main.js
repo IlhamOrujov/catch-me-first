@@ -169,6 +169,7 @@ let env = null, life = null, navgrid = null;
       UI.toast("🏠 home ♡");
     } catch (e) { console.error("environment load failed", e); UI.toast("⚠️ Map failed to load — staying in the dorm"); }
   }
+  State.bus.emit("game:ready");   // the title screen can now offer "Enter"
   life = new Life({ akuu, camCtl, camera, ui: UI, brain: Brain, scene, audio: Audio,
     bounds: env?.bounds, pathfinder: navgrid, runAbility: (id, args) => runAbility(id, args, ctx) });
   ctx.life = life;
@@ -531,6 +532,28 @@ addEventListener("unhandledrejection", (e) => {
   </div>`;
   document.body.appendChild(o);
   document.getElementById("obGo").onclick = () => { o.remove(); State.set("_onboarded", true); try { Audio.resume(); if (State.settings.musicEnabled) Audio.startMusic(); } catch {} };
+})();
+
+// ---------- ✦ cinematic title / loading screen ----------
+(function titleScreen() {
+  const t = document.getElementById("titleScreen");
+  if (!t) return;
+  let ready = false, entered = false;
+  const reveal = () => { if (!ready) { ready = true; t.classList.add("ready"); } };
+  State.bus.on("game:ready", reveal);
+  setTimeout(reveal, 12000);   // fallback so "Enter" always appears, even on a slow/failed load
+  const enter = () => {
+    if (entered || !ready) return;
+    entered = true;
+    t.classList.add("gone");
+    setTimeout(() => t.remove(), 950);
+    try { Audio.resume(); if (State.settings.musicEnabled) Audio.startMusic(); } catch {}   // Enter = a user gesture → audio can start
+    State.bus.emit("game:started");
+  };
+  document.getElementById("tsEnter").onclick = enter;
+  addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && ready && !entered && document.getElementById("titleScreen")) { e.preventDefault(); enter(); }
+  });
 })();
 
 // ---------- resize ----------

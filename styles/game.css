@@ -646,3 +646,41 @@ body.fp-active #chatDock:hover{opacity:1}
   #chatDock{width:calc(100vw - 36px)}
   .meters{width:150px}
 }
+
+/* ---------- ✦ title / loading screen (golden hour) ---------- */
+#titleScreen{position:fixed;inset:0;z-index:400;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#2a1e45;opacity:1;transition:opacity .9s ease}
+#titleScreen.gone{opacity:0;pointer-events:none}
+.ts-sky{position:absolute;inset:0;background:linear-gradient(180deg,#2b2150 0%,#4a3570 22%,#8a5580 42%,#c9727f 58%,#ff9f6b 78%,#ffd291 100%)}
+.ts-sun{position:absolute;left:70%;bottom:27%;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle,#fff6d8 0%,#ffdf9c 40%,rgba(255,180,120,.5) 65%,transparent 72%);box-shadow:0 0 130px 60px rgba(255,190,130,.5);animation:tsSun 9s ease-in-out infinite}
+@keyframes tsSun{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px)}}
+.ts-skyline{position:absolute;left:0;right:0;bottom:0;width:100%;height:42%}
+.ts-bldg rect{fill:#241a3a}
+.ts-win rect{fill:#ffd487;animation:tsWin 5s ease-in-out infinite}
+.ts-win rect:nth-child(3n){animation-delay:1.6s}.ts-win rect:nth-child(3n+1){animation-delay:.8s}
+@keyframes tsWin{0%,100%{opacity:.3}50%{opacity:.95}}
+.ts-veil{position:absolute;inset:0;background:radial-gradient(130% 90% at 50% 22%,transparent 42%,rgba(18,8,26,.5) 100%),linear-gradient(180deg,transparent 45%,rgba(18,8,24,.6) 88%,rgba(12,5,16,.82) 100%)}
+.ts-bokeh{position:absolute;inset:0;pointer-events:none}
+.ts-bokeh i{position:absolute;width:10px;height:10px;border-radius:50%;background:radial-gradient(circle,rgba(255,220,160,.9),transparent 70%);filter:blur(1px);animation:tsFloat 11s ease-in-out infinite}
+.ts-bokeh i:nth-child(1){left:12%;top:64%}.ts-bokeh i:nth-child(2){left:22%;top:40%;width:6px;height:6px;animation-delay:2s}
+.ts-bokeh i:nth-child(3){left:80%;top:56%;animation-delay:4s}.ts-bokeh i:nth-child(4){left:66%;top:34%;width:7px;height:7px;animation-delay:1s}
+.ts-bokeh i:nth-child(5){left:44%;top:70%;width:12px;height:12px;animation-delay:3s}.ts-bokeh i:nth-child(6){left:90%;top:44%;width:6px;height:6px;animation-delay:5s}
+.ts-bokeh i:nth-child(7){left:33%;top:52%;animation-delay:6s}
+@keyframes tsFloat{0%,100%{transform:translateY(0);opacity:.3}50%{transform:translateY(-22px);opacity:.9}}
+.ts-content{position:relative;z-index:2;text-align:center;padding:20px;max-width:640px;animation:tsIn 1.2s ease both}
+@keyframes tsIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.ts-kicker{font-size:12.5px;letter-spacing:3px;text-transform:uppercase;color:#ffe0c0;opacity:.85;margin-bottom:10px}
+.ts-title{font-size:clamp(44px,9vw,88px);font-weight:800;line-height:1;color:#fff;letter-spacing:1px;text-shadow:0 2px 40px rgba(255,170,120,.5),0 1px 3px rgba(0,0,0,.3)}
+.ts-title span{color:#ff9ec2}
+.ts-tag{margin-top:16px;font-size:15px;line-height:1.6;color:#fbeee6;opacity:.92;text-shadow:0 1px 10px rgba(0,0,0,.35)}
+.ts-enter{margin-top:30px;min-width:230px;height:54px;border-radius:99px;cursor:pointer;font-family:var(--font);font-size:16px;font-weight:700;color:#fff;background:linear-gradient(135deg,rgba(255,255,255,.16),rgba(255,255,255,.06));border:1px solid rgba(255,255,255,.28);backdrop-filter:blur(8px);transition:.25s}
+#titleScreen:not(.ready) .ts-enter{cursor:default;opacity:.9}
+#titleScreen:not(.ready) .ts-go{display:none}
+#titleScreen.ready .ts-loading{display:none}
+#titleScreen.ready .ts-enter{background:linear-gradient(135deg,#ff8fb0,#ff7a9c);border-color:transparent;animation:tsPulse 2.4s ease-in-out infinite}
+#titleScreen.ready .ts-enter:hover{transform:translateY(-3px) scale(1.03);box-shadow:0 14px 40px rgba(255,120,150,.65)}
+@keyframes tsPulse{0%,100%{box-shadow:0 10px 34px rgba(255,120,150,.45)}50%{box-shadow:0 12px 42px rgba(255,150,180,.72)}}
+.ts-loading{display:inline-flex;align-items:center;gap:9px}
+.ts-spin{width:15px;height:15px;border-radius:50%;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;display:inline-block;animation:spin .8s linear infinite}
+.ts-hint{margin-top:18px;font-size:11.5px;color:#ffeede;opacity:.7}
+.ts-hint kbd{background:rgba(255,255,255,.18);border-radius:5px;padding:1px 6px;font-family:var(--font);font-size:10.5px}
+@media(max-width:600px){.ts-sun{left:62%;width:88px;height:88px}.ts-tag br{display:none}}
