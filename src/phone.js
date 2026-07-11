@@ -51,14 +51,39 @@ const PLAYLIST = [
 
 const NOTICE_EMPTY = "no texts yet — say hi ♡";
 
+// ---- your contacts: Alice (the real AI) + other girls (persona-flavoured) ------
+const CONTACTS = [
+  { id: "alice", name: () => State.settings.aiName || "Alice", emoji: "♡", color: "linear-gradient(135deg,#ff7aa2,#b06de0)", tag: "your roommate ♡", persona: null },
+  { id: "yuki", name: () => "Yuki", emoji: "😼", color: "linear-gradient(135deg,#8a7bff,#5f6bff)", tag: "the gremlin bestie",
+    persona: "You are Yuki, texting your friend (a guy named Deku). You are Alice's blunt, teasing best friend — sarcastic, chaotic, quick-witted, lots of lol/lmao, you roast him affectionately. Keep replies to 1-2 short text-message sentences. Never break character or mention being an AI.",
+    canned: ["lol what do u want", "did alice put u up to this 😼", "ur so lame lmaooo", "brb raiding ur fridge", "tell alice she still owes me", "omg not u texting first 💀", "kk whatever loser ♡", "go hang out with alice, weirdo"] },
+  { id: "mei", name: () => "Mei", emoji: "🌸", color: "linear-gradient(135deg,#ff9ecb,#ff7ab0)", tag: "soft & shy",
+    persona: "You are Mei, texting a friend (Deku). You are sweet, shy, soft-spoken and a little anxious; you use 'um', '...', and gentle hearts. Warm, gentle 1-2 sentence texts. Never break character or mention being an AI.",
+    canned: ["oh! h-hi... ♡", "um... how are you? >_<", "i baked cookies today...", "s-sorry, was i bothering you?", "take care okay? ♡", "eep— you surprised me hehe", "i hope you're eating well..."] },
+  { id: "rin", name: () => "Rin", emoji: "🎮", color: "linear-gradient(135deg,#5ad1c8,#3aa0e0)", tag: "gamer chaos",
+    persona: "You are Rin, texting a friend (Deku). You are a hyper gamer girl — memes, gaming slang, occasional ALL CAPS, 'gg', 'wanna queue?', chaotic energy. Short 1-2 sentence texts. Never break character or mention being an AI.",
+    canned: ["YO wanna queue ranked??", "gg ez 😎", "i hard carried again lol", "ur ping is trash lets go", "AFK snacks brb", "1v1 me irl 🎮", "touch grass? never heard of her"] },
+  { id: "sora", name: () => "Sora", emoji: "🌙", color: "linear-gradient(135deg,#c7a3ff,#9b7ae0)", tag: "elegant senpai",
+    persona: "You are Sora, texting a junior friend (Deku). You are mature, elegant, calm — a caring older-sister type. Composed, kind, gently encouraging, a touch formal. Short 1-2 sentence texts. Never break character or mention being an AI.",
+    canned: ["Have you eaten properly today?", "Don't stay up too late, alright?", "I'm proud of you, you know ♡", "Come by for tea sometime.", "Look after Alice for me.", "You've grown a little, haven't you?"] },
+];
+
 export const Phone = {
   refs: null, open: false, app: "lock", unread: 0, locked: true,
-  _batt: 86, _track: 0, _typing: false,
+  _batt: 86, _track: 0, _typing: false, contact: "alice", _unreadBy: {}, _sub: "list",
+
+  // ---- contact / thread helpers --------------------------------------------
+  _threads() { const s = State.settings; if (!s.phoneThreads) s.phoneThreads = {}; return s.phoneThreads; },
+  _thr(id) { const t = this._threads(); if (!t[id]) t[id] = []; return t[id]; },
+  _contact(id) { return CONTACTS.find((c) => c.id === id) || CONTACTS[0]; },
+  _cname(c) { return typeof c.name === "function" ? c.name() : c.name; },
+  _totalUnread() { return CONTACTS.reduce((n, c) => n + (this._unreadBy[c.id] || 0), 0); },
 
   init(refs) {
     this.refs = refs;                       // { brain, ui, audio, akuu, lifesim }
     const s = State.settings;
-    if (!s.phoneThread) s.phoneThread = [];
+    const t = this._threads();
+    if (!t.alice) t.alice = (s.phoneThread && s.phoneThread.length) ? s.phoneThread.slice() : [];   // migrate legacy single thread
     if (typeof s.phoneNotes !== "string") s.phoneNotes = "";
     if (!s.phoneWall) s.phoneWall = "auto";
     this._shell();
@@ -144,17 +169,20 @@ export const Phone = {
     this.fab?.classList.toggle("buzzing", this.unread > 0);
   },
 
-  // ---- inbound texts from her ----
-  receive(text) {
+  // ---- inbound text from a contact (default: Alice) ----
+  receive(text, from = "alice") {
     if (!text) return;
-    const s = State.settings;
-    s.phoneThread.push({ from: "her", text: String(text).slice(0, 400), ts: Date.now() });
-    s.phoneThread = s.phoneThread.slice(-120);
+    const t = this._threads();
+    t[from] = this._thr(from).concat({ from: "her", text: String(text).slice(0, 400), ts: Date.now() }).slice(-120);
     State.save();
     this.dev.classList.add("buzz"); setTimeout(() => this.dev.classList.remove("buzz"), 550);
     this.refs.audio?.sfx?.("pop");
-    if (this.open && this.app === "messages" && !this.locked) this._messages();
-    else { this.unread++; this._badge(); if (this.open && this.locked) this._lock(); }
+    const viewing = this.open && !this.locked && this.app === "messages" && this._sub === "thread" && this.contact === from;
+    if (viewing) { this._thread(from); return; }
+    this._unreadBy[from] = (this._unreadBy[from] || 0) + 1;
+    this.unread++; this._badge();
+    if (this.open && this.locked) this._lock();
+    else if (this.open && this.app === "messages") this._messages();
   },
 
   // ---- router ----
@@ -177,14 +205,16 @@ export const Phone = {
   // ================= LOCK SCREEN =================
   _lock() {
     const s = State.settings;
-    const last = [...s.phoneThread].reverse().find((m) => m.from === "her");
+    // latest incoming text across every contact
+    let last = null, lastC = null;
+    for (const c of CONTACTS) { const thr = this._thr(c.id); for (let i = thr.length - 1; i >= 0; i--) { if (thr[i].from !== "you") { if (!last || thr[i].ts > last.ts) { last = thr[i]; lastC = c; } break; } } }
     const d = new Date();
     const date = d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
     this.screen.innerHTML = `
       <div class="ph-lock">
         <div class="ph-lockclock" id="phLockClock">${hhmm()}</div>
         <div class="ph-lockdate">${esc(date)}</div>
-        ${(this.unread && last) ? `<div class="ph-notif"><b>${esc(s.aiName)} ♡</b><span></span><time>${hhmm(last.ts)}</time></div>` : `<div class="ph-lockhint">♡ ${esc(s.aiName)} is ${State.world.away ? "out right now" : "home with you"}</div>`}
+        ${(this.unread && last) ? `<div class="ph-notif" data-id="${lastC.id}"><b>${esc(this._cname(lastC))} ♡</b><span></span><time>${hhmm(last.ts)}</time></div>` : `<div class="ph-lockhint">♡ ${esc(s.aiName)} is ${State.world.away ? "out right now" : "home with you"}</div>`}
         <button class="ph-unlock" id="phUnlock"><span>swipe up to open</span><i>⌃</i></button>
       </div>`;
     if (this.unread && last) { const sp = this.screen.querySelector(".ph-notif span"); if (sp) sp.textContent = last.text; }
@@ -194,7 +224,7 @@ export const Phone = {
     let sy = 0;
     this.screen.ontouchstart = (e) => { sy = e.touches[0].clientY; };
     this.screen.ontouchend = (e) => { if (sy && sy - (e.changedTouches[0]?.clientY ?? sy) > 40) this._unlock(); };
-    const notif = this.screen.querySelector(".ph-notif"); if (notif) notif.onclick = () => { this._unlock("messages"); };
+    const notif = this.screen.querySelector(".ph-notif"); if (notif) notif.onclick = () => { this.locked = false; this.app = "messages"; this.unread = 0; this._badge(); this.screen.ontouchstart = this.screen.ontouchend = null; this._thread(notif.dataset.id); };
   },
   _unlock(app = "home") {
     this.locked = false; this.app = app; this.unread = 0; this._badge();
@@ -207,7 +237,7 @@ export const Phone = {
   _home() {
     const s = State.settings, w = State.world;
     const apps = [
-      ["messages", "💬", "Messages", s.phoneThread.length || ""],
+      ["messages", "💬", "Messages", this._totalUnread() || ""],
       ["camera", "📷", "Camera", ""],
       ["gallery", "🖼️", "Gallery", State.gallery.length || ""],
       ["music", "🎵", "Music", ""],
@@ -233,46 +263,81 @@ export const Phone = {
     this.screen.querySelectorAll("[data-app]").forEach((b) => b.onclick = () => this._go(b.dataset.app));
   },
 
-  // ================= MESSAGES =================
+  // ================= MESSAGES — contacts list =================
   _messages() {
-    const s = State.settings, th = s.phoneThread;
-    this.screen.innerHTML = this._header(s.aiName, State.world.away ? "out ♡" : "online") +
-      `<div class="ph-thread" id="phThread">${th.length ? th.map((m, i) => this._bubble(m, i)).join("") : `<p class="ph-empty">${NOTICE_EMPTY}</p>`}</div>
-       <div class="ph-compose"><input id="phInput" maxlength="300" placeholder="message ${esc(s.aiName)}…" autocomplete="off"><button id="phSend" title="send">➤</button></div>`;
-    // fill text safely + wire reactions
+    this._sub = "list";
+    this.screen.innerHTML = this._header("Messages", `${CONTACTS.length} chats`) +
+      `<div class="ph-contacts">${CONTACTS.map((c) => {
+        const thr = this._thr(c.id); const last = thr[thr.length - 1]; const un = this._unreadBy[c.id] || 0;
+        return `<button class="ph-contact" data-id="${c.id}">
+          <span class="ph-cav" style="background:${c.color}">${c.emoji}</span>
+          <div class="ph-cmeta"><b>${esc(this._cname(c))}</b><span class="ph-cprev ${un ? "un" : ""}"></span></div>
+          <div class="ph-cside"><time>${last ? hhmm(last.ts) : ""}</time>${un ? `<span class="ph-cun">${un}</span>` : ""}</div>
+        </button>`;
+      }).join("")}</div>`;
+    this._wireBack();
+    CONTACTS.forEach((c) => {
+      const thr = this._thr(c.id); const last = thr[thr.length - 1];
+      const prev = last ? (last.from === "you" ? "you: " : "") + last.text : c.tag;
+      const el = this.screen.querySelector(`.ph-contact[data-id="${c.id}"] .ph-cprev`); if (el) el.textContent = prev.slice(0, 46);
+    });
+    this.screen.querySelectorAll(".ph-contact").forEach((b) => b.onclick = () => this._thread(b.dataset.id));
+  },
+
+  // ================= MESSAGES — a single conversation =================
+  _thread(id) {
+    this._sub = "thread"; this.contact = id; this.app = "messages"; this.locked = false;
+    const c = this._contact(id); const thr = this._thr(id);
+    if (this._unreadBy[id]) { this.unread = Math.max(0, this.unread - this._unreadBy[id]); this._unreadBy[id] = 0; this._badge(); }
+    const sub = id === "alice" ? (State.world.away ? "out ♡" : "online") : c.tag;
+    this.screen.innerHTML = `
+      <div class="ph-bar"><button class="ph-back" title="back">‹</button><span class="ph-cav sm" style="background:${c.color}">${c.emoji}</span><div class="ph-bartitle"><span>${esc(this._cname(c))}</span><em>${esc(sub)}</em></div></div>
+      <div class="ph-thread" id="phThread">${thr.length ? thr.map((m, i) => this._bubble(m, i)).join("") : `<p class="ph-empty">say hi to ${esc(this._cname(c))} ♡</p>`}</div>
+      <div class="ph-compose"><input id="phInput" maxlength="300" placeholder="message ${esc(this._cname(c))}…" autocomplete="off"><button id="phSend" title="send">➤</button></div>`;
     this.screen.querySelectorAll(".ph-msg").forEach((el) => {
-      const i = +el.dataset.i; const m = th[i]; if (!m) return;
+      const i = +el.dataset.i; const m = thr[i]; if (!m) return;
       const sp = el.querySelector(".ph-txt"); if (sp) sp.textContent = m.text;
       if (m.react) el.querySelector(".ph-react").textContent = m.react;
-      el.querySelector(".ph-txt").onclick = () => this._reactTo(i, el);
+      el.querySelector(".ph-txt").onclick = () => this._reactTo(id, i, el);
     });
-    this._wireBack();
+    const back = this.screen.querySelector(".ph-back"); if (back) back.onclick = () => this._messages();
     const input = this.screen.querySelector("#phInput");
     const send = () => {
       const v = input.value.trim(); if (!v) return; input.value = "";
-      th.push({ from: "you", text: v.slice(0, 300), ts: Date.now(), read: false });
-      State.save(); this._messages();
-      this._showTyping();
-      const b = this.refs.brain;
-      if (!b?.send) { this._hideTyping(); return; }
-      b.send(v).then((r) => {
-        // mark your last message "read", then show her reply
-        const yours = [...th].reverse().find((m) => m.from === "you"); if (yours) yours.read = true;
-        if (r?.text) this.receive(r.text);
-        else { this._hideTyping(); this._messages(); }
-      }).catch(() => { this._hideTyping(); });
+      this._threads()[id] = this._thr(id).concat({ from: "you", text: v.slice(0, 300), ts: Date.now(), read: false }).slice(-120);
+      State.save(); this._thread(id); this._showTyping();
+      this._reply(id, v);
     };
     this.screen.querySelector("#phSend").onclick = send;
     input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); send(); } };
     this._scrollThread();
     setTimeout(() => input?.focus(), 60);
   },
+
+  // route the reply: Alice → the real brain; other girls → persona (fallback canned)
+  _reply(id, text) {
+    const c = this._contact(id);
+    const markRead = () => { const y = [...this._thr(id)].reverse().find((m) => m.from === "you"); if (y) y.read = true; };
+    const deliver = (t) => { markRead(); this._hideTyping(); this.receive((t && t.trim()) ? t : this._canned(c), id); };
+    if (id === "alice") {
+      const b = this.refs.brain;
+      if (!b?.send) { this._hideTyping(); return; }
+      b.send(text).then((r) => { markRead(); if (r?.text) this.receive(r.text, "alice"); else { this._hideTyping(); if (this._sub === "thread" && this.contact === "alice") this._thread("alice"); } }).catch(() => this._hideTyping());
+      return;
+    }
+    const b = this.refs.brain;
+    const hasKey = State.settings.groqKeys?.length || State.settings.geminiKeys?.length || State.settings.groqApiKey;
+    if (b?.sendAs && hasKey) b.sendAs(c.persona, this._thr(id), text).then((t) => deliver(t)).catch(() => setTimeout(() => deliver(""), 500));
+    else setTimeout(() => deliver(""), 700 + Math.random() * 700);
+  },
+  _canned(c) { return c.canned ? c.canned[Math.floor(Math.random() * c.canned.length)] : "…"; },
+
   _bubble(m, i) {
     const read = m.from === "you" ? `<i class="ph-tick">${m.read ? "✓✓" : "✓"}</i>` : "";
     return `<div class="ph-msg ${m.from}" data-i="${i}"><span class="ph-txt"></span><span class="ph-react">${m.react ? esc(m.react) : ""}</span><time>${hhmm(m.ts)}${read}</time></div>`;
   },
-  _reactTo(i, el) {
-    const m = State.settings.phoneThread[i]; if (!m) return;
+  _reactTo(id, i, el) {
+    const m = this._thr(id)[i]; if (!m) return;
     const picks = ["♡", "😊", "😂", "😮", "🥺", "👍"];
     const cur = picks.indexOf(m.react || "♡");
     m.react = m.react === picks[(cur + 1) % picks.length] ? "" : picks[(cur + 1) % picks.length];
@@ -515,6 +580,6 @@ export const Phone = {
       this._settings();
     };
     this.screen.querySelector("#phOpenSettings").onclick = () => { this.toggle(false); document.getElementById("gearBtn")?.click(); };
-    this.screen.querySelector("#phClearThread").onclick = () => { s.phoneThread = []; State.save?.(); this.refs.ui?.toast?.("🧹 thread cleared"); this._go("home"); };
+    this.screen.querySelector("#phClearThread").onclick = () => { s.phoneThreads = {}; this._unreadBy = {}; this.unread = 0; this._badge(); State.save?.(); this.refs.ui?.toast?.("🧹 all threads cleared"); this._go("home"); };
   },
 };

@@ -96,6 +96,38 @@ class Handler(SimpleHTTPRequestHandler):
             return
         return super().do_GET()
 
+    def do_POST(self):
+        # Developer Mode "notes for Claude" → append to DEV-NOTES.md in the repo,
+        # so notes the user leaves in-game are waiting here for the next session.
+        route = self.path.split("?")[0]
+        if route in ("/dev/note", "/dev/save"):
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                data = json.loads(self.rfile.read(length) or b"{}")
+                if route == "/dev/note":
+                    text = str(data.get("text", "")).strip()
+                    if text:
+                        stamp = time.strftime("%Y-%m-%d %H:%M")
+                        with open(os.path.join(HERE, "DEV-NOTES.md"), "a", encoding="utf-8") as f:
+                            f.write(f"\n### {stamp}\n{text}\n")
+                else:  # /dev/save — arbitrary named file under dev-exports/
+                    name = os.path.basename(str(data.get("name", "scene.json")))
+                    os.makedirs(os.path.join(HERE, "dev-exports"), exist_ok=True)
+                    with open(os.path.join(HERE, "dev-exports", name), "w", encoding="utf-8") as f:
+                        f.write(str(data.get("body", "")))
+                payload = json.dumps({"ok": True}).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True
+            except Exception as e:
+                self.send_error(500, f"dev endpoint error: {e}")
+            return
+        self.send_error(404)
+
     def log_message(self, *args):
         pass  # quiet
 

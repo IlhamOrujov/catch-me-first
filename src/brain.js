@@ -401,6 +401,17 @@ export const Brain = {
     }
   },
 
+  // One-shot reply AS another character (phone contacts / "other girls"). Uses a
+  // throwaway message list so it NEVER touches Alice's conversation state or tools.
+  // Throws on no-key / backend errors so the caller can fall back to canned lines.
+  async sendAs(personaPrompt, history, userText) {
+    const messages = [{ role: "system", content: personaPrompt }];
+    for (const m of (history || []).slice(-8)) messages.push({ role: m.from === "you" ? "user" : "assistant", content: String(m.text || "") });
+    messages.push({ role: "user", content: userText });
+    const { content } = await this._call(messages, { withTools: false });
+    return String(content || "").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 300);
+  },
+
   async proactive() {
     const nudges = [
       "(Deku has been quiet a while. Do something spontaneous and in-character — comment on the time/weather, start a small activity, tease him. Speak AND use a tool.)",

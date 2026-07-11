@@ -33,13 +33,13 @@ import { Build } from "./buildmode.js";
 import { Story } from "./story.js";
 import { Minigames } from "./minigames.js";
 import { Mobile } from "./mobile.js";
+import { DevMode } from "./devmode.js";
 import { Mapper } from "./mapper.js";
 import { PostFX } from "./postfx.js";
 import { Atmosphere } from "./atmosphere.js";
 import { Ambient } from "./ambient.js";
 import { HudMenu } from "./hudmenu.js";
 import { Reflection } from "./reflection.js";
-import { Pet } from "./pet.js";
 import { Icons } from "./icons.js";
 
 State.load();
@@ -195,10 +195,6 @@ let env = null, life = null, navgrid = null;
     ctx.mapper = Mapper;
     if (window.CMF) { window.CMF.env = env; window.CMF.Mapper = Mapper; }
   }
-  // Mochi the cat — pads around the real nav-floor
-  Pet.init({ scene, navgrid, audio: Audio });
-  ctx.pet = Pet;
-  if (window.CMF) window.CMF.Pet = Pet;
 })();
 
 // ---------- living-world extras ----------
@@ -226,6 +222,7 @@ ctx.story = Story;
 Minigames.init({ akuu, ui: UI, lifesim: Lifesim, brain: Brain, emotion: Emotion });
 ctx.minigames = Minigames;
 Mobile.init({ camCtl, renderer, ui: UI });
+DevMode.init({ scene, camera, renderer, camCtl, akuu, dorm, ui: UI });
 Reflection.init({ brain: Brain, ui: UI, get magic() { return ctx.magic; }, get lifesim() { return ctx.lifesim; } });
 ctx.reflection = Reflection;
 HudMenu.init();   // gather the tool buttons behind one ☰ menu (observer catches late ones)
@@ -261,7 +258,6 @@ renderer.domElement.addEventListener("pointerdown", (e) => {
   if (!akuu?.root || !life) return;
   const r = renderer.domElement.getBoundingClientRect();
   pokeRay.setFromCamera({ x: ((e.clientX - r.left) / r.width) * 2 - 1, y: -((e.clientY - r.top) / r.height) * 2 + 1 }, camera);
-  if (Pet.cat) { const pc = pokeRay.intersectObject(Pet.cat, true); if (pc.length && pc[0].distance < 14) { Pet.pet(); return; } }
   const hits = pokeRay.intersectObject(akuu.root, true);
   if (hits.length && hits[0].distance < 14) life.poked();
 });
@@ -586,12 +582,12 @@ function loop() {
   if (life) step(life.update, life, dt, "life");
   if (Events.refs) step(Events.update, Events, dt, "events");
   if (Reflection.refs) step(Reflection.update, Reflection, dt, "reflection");
-  if (Pet.cat) step(Pet.update, Pet, dt, "pet");
   if (Magic.refs) step(Magic.update, Magic, dt, "magic");
   if (Emotion.refs) step(Emotion.update, Emotion, dt, "emotion");
   step(akuu.update, akuu, dt, "akuu", camera);
   step(updateFx, null, dt, "fx");
   step(camCtl.update, camCtl, dt, "cam");
+  if (DevMode.on) step(DevMode.update, DevMode, dt, "dev");
   step(Atmosphere.update, Atmosphere, dt, "atmo");
   // soft footsteps as she walks
   if (akuu?.isWalking?.() && akuu._movedThisFrame !== false) { _stepT += dt; if (_stepT > 0.42) { _stepT = 0; Ambient.footstep(); } } else _stepT = 0.42;
@@ -628,5 +624,5 @@ document.querySelectorAll("[data-cammode]").forEach((b) =>
   b.addEventListener("click", () => camCtl.setMode(b.dataset.cammode)));
 
 // expose for debugging / admin console
-window.CMF = { State, dorm, akuu, Brain, UI, Audio, ctx, cameraFx, camera, controls: camCtl.orbit, camCtl, scene, Emotion, Studio, RAG, Lifesim, Phone, Build, Story, Minigames, Mobile, PostFX, Atmosphere, Ambient, Pet, Icons };
+window.CMF = { State, dorm, akuu, Brain, UI, Audio, ctx, cameraFx, camera, controls: camCtl.orbit, camCtl, scene, Emotion, Studio, RAG, Lifesim, Phone, Build, Story, Minigames, Mobile, PostFX, Atmosphere, Ambient, Icons, DevMode };
 console.log("%cCatch Me First ♡", "font-size:20px;color:#ff6ba6", "— Akuu is awake. Set your Groq key in ⚙️.");
