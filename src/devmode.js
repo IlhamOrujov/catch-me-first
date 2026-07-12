@@ -197,10 +197,13 @@ export const DevMode = {
       this._text("normal/rough map URL", "", (u) => nrm = u, "https://…");
       this._grid([this._btn("→ normalMap", () => this._pbr(nrm, "normalMap")), this._btn("→ roughnessMap", () => this._pbr(nrm, "roughnessMap"))]);
     }
-    this._h("Collision");
+    this._h("Collision & navmesh");
     this._grid([
       this._btn("Block here (wall)", () => this._addBlocker(o)),
       this._btn("Clear my walls", () => this._clearBlockers(), "danger"),
+      this._btn(this._navPaint ? "Nav paint: ON" : "Paint navmesh", () => this._paintNav(), this._navPaint ? "hot" : ""),
+      this._btn("Show navmesh", () => this._showNav()),
+      this._btn("Rebuild collision + nav", () => this._rebuildCollision()),
     ]);
   },
 
@@ -252,6 +255,10 @@ export const DevMode = {
     const bloom = C.PostFX?.bloom;
     if (bloom) { this._slider("strength", 0, 2, 0.01, bloom.strength, (v) => bloom.strength = v); this._slider("threshold", 0, 1, 0.01, bloom.threshold, (v) => bloom.threshold = v); this._slider("radius", 0, 1, 0.01, bloom.radius, (v) => bloom.radius = v); }
     else this.body.append($(`<i class="dv-dim">bloom not exposed (mobile / off)</i>`));
+    this._h("Colour grade");
+    const g = C.PostFX?.grade?.uniforms;
+    if (g) { const R = { brightness: [0, 2], contrast: [0, 2], saturation: [0, 2], warmth: [-1, 1], vignette: [0, 3], grain: [0, 0.2] }; Object.keys(R).forEach((k) => { if (g[k]) this._slider(k, R[k][0], R[k][1], 0.005, g[k].value, (v) => g[k].value = v); }); }
+    else this.body.append($(`<i class="dv-dim">grade not exposed (mobile / off)</i>`));
   },
 
   // ============================================================ IMAGE
@@ -620,6 +627,7 @@ export const DevMode = {
     const hit = ray.intersectObjects(this.ctx.scene.children, true).find((h) => h.object.isMesh && h.object.visible);
     if (!hit) return;
     if (this._decalMode) { this._placeDecal(hit); this._decalMode = false; if (this._curTab === "image") this._tab("image"); return; }
+    if (this._navPaint) { this._blockCell(hit.point.clone()); return; }
     if (this._pinning) { this._addPin(hit.point.clone()); this._pinning = false; return; }
     if (this._measuring) { (this._measPts ||= []).push(hit.point.clone()); if (this._measPts.length === 2) { const d = this._measPts[0].distanceTo(this._measPts[1]); this._drawMeasure(this._measPts[0], this._measPts[1]); this._status("distance: " + d.toFixed(2) + " m"); this._measPts = []; } else this._status("measure: first point set — click the second"); return; }
     let o = hit.object; while (o.parent && o.parent !== this.ctx.scene && !o.name) o = o.parent;
@@ -748,6 +756,88 @@ export const DevMode = {
   },
   _humanoid() { return this.ctx.akuu?.custom?.vrm?.humanoid || this.ctx.akuu?.vrm?.humanoid || null; },
 
+  // ---- navmesh painting + collision rebuild ----
+  _paintNav() { this._navPaint = !this._navPaint; this._status(this._navPaint ? "click the floor to block walkable cells" : "nav paint off"); this._tab(this._curTab); },
+  _blockCell(point) {
+    const ng = window.CMF.navgrid; if (!ng) return this._status("no navmesh baked");
+    const cx = Math.floor((point.x - ng.minX) / 0.3), cz = Math.floor((point.z - ng.minZ) / 0.3);
+    if (cx < 0 || cz < 0 || cx >= ng.w || cz >= ng.h) return;
+    const i = ng.idx(cx, cz); ng.open[i] = 0; ng.edges.delete(i);
+    for (const [k, arr] of ng.edges) { const f = arr.filter((n) => n !== i); if (f.length !== arr.length) ng.edges.set(k, f); }
+    const c = ng.cellCenter(cx, cz); const m = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.02, 0.28), new THREE.MeshBasicMaterial({ color: 0xff3355, transparent: true, opacity: 0.6 })); m.position.set(c.x, 0.03, c.z); m.name = "navblock"; this.ctx.scene.add(m); (this._navMarks ||= []).push(m); this._status("blocked cell " + cx + "," + cz);
+  },
+  _showNav() {
+    if (this._navViz) { this._navViz.forEach((o) => this.ctx.scene.remove(o)); this._navViz = null; this._status("navmesh hidden"); return; }
+    const ng = window.CMF.navgrid; if (!ng) return this._status("no navmesh baked"); this._navViz = [];
+    const geo = new THREE.SphereGeometry(0.04, 6, 6), mat = new THREE.MeshBasicMaterial({ color: 0x39ff88 });
+    let n = 0; for (let cz = 0; cz < ng.h && n < 2500; cz++) for (let cx = 0; cx < ng.w; cx++) { const i = ng.idx(cx, cz); if (ng.open[i] && ng.edges.has(i)) { const c = ng.cellCenter(cx, cz); const d = new THREE.Mesh(geo, mat); d.position.set(c.x, 0.03, c.z); this.ctx.scene.add(d); this._navViz.push(d); n++; } }
+    this._status("navmesh: " + n + " walkable cells");
+  },
+  async _rebuildCollision() {
+    const env = window.CMF.env; if (!env?.root) return this._status("no apartment to rebuild from");
+    this._status("rebuilding collision + navmesh…");
+    try {
+      const { buildCollider } = await import("./collision.js");
+      const col = await buildCollider(env.root);
+      for (const o of this.added) if (o.isMesh && o.geometry) { try { o.geometry.computeBoundsTree?.({ maxLeafTris: 8 }); } catch {} col.meshes.push(o); }
+      this.ctx.camCtl?.setCollider?.((f, t) => col.resolve(f, t, 0.20));
+      this.ctx.akuu?.setCollider?.((f, t) => col.resolve(f, t, 0.16));
+      window.CMF.collider = col;
+      const { NavGrid } = await import("./pathfinding.js");
+      const ng = new NavGrid(col, env.bounds).bake(); window.CMF.navgrid = ng;
+      if (window.CMF.life?.refs) window.CMF.life.refs.pathfinder = ng;
+      this._status("collision + navmesh rebuilt ✓ (" + col.meshes.length + " meshes)");
+    } catch (e) { this._status("rebuild failed: " + e.message); }
+  },
+
+  // ---- dialogue tree editor ----
+  _dialog() { return (State.settings.devDialogue ||= { start: "start", nodes: { start: { text: "Hey — what did you want to talk about?", choices: [] } } }); },
+  _dialogEditor() {
+    document.getElementById("dvDialog")?.remove();
+    const d = this._dialog();
+    const ov = $(`<div id="dvDialog"><div class="dvd-head"><b>💬 Dialogue tree</b><button class="dv-b" id="dvdClose">close</button></div><div class="dvd-body"></div><div class="dvd-foot"></div></div>`);
+    const body = ov.querySelector(".dvd-body");
+    const redraw = () => {
+      body.innerHTML = "";
+      Object.keys(d.nodes).forEach((id) => {
+        const node = d.nodes[id];
+        const card = $(`<div class="dvd-node"><div class="dvd-nid">${id}${id === d.start ? " ★ start" : ""}</div></div>`);
+        const ta = $(`<textarea class="dv-ta"></textarea>`); ta.value = node.text || ""; ta.onchange = () => { node.text = ta.value; State.save?.(); }; card.append(ta);
+        (node.choices || []).forEach((ch, ci) => {
+          const row = $(`<div class="dvd-choice"></div>`);
+          const lab = $(`<input placeholder="choice text">`); lab.value = ch.label || ""; lab.onchange = () => { ch.label = lab.value; State.save?.(); };
+          const sel = $(`<select><option value="">(end)</option>${Object.keys(d.nodes).map((n) => `<option value="${n}"${ch.to === n ? " selected" : ""}>${n}</option>`).join("")}</select>`); sel.onchange = () => { ch.to = sel.value; State.save?.(); };
+          const del = $(`<button class="dv-b danger">✕</button>`); del.onclick = () => { node.choices.splice(ci, 1); State.save?.(); redraw(); };
+          row.append(lab, sel, del); card.append(row);
+        });
+        const r = $(`<div class="dvd-row"></div>`);
+        r.append(
+          this._btn("+ choice", () => { (node.choices ||= []).push({ label: "…", to: "" }); State.save?.(); redraw(); }),
+          this._btn("set start", () => { d.start = id; State.save?.(); redraw(); }),
+          this._btn("▶ play", () => this._playDialog(id), "hot"),
+          this._btn("delete", () => { if (id !== "start") { delete d.nodes[id]; State.save?.(); redraw(); } else this._status("keep a start node"); }, "danger"),
+        );
+        card.append(r); body.append(card);
+      });
+    };
+    ov.querySelector(".dvd-foot").append(
+      this._btn("+ node", () => { let n = 1; while (d.nodes["node" + n]) n++; d.nodes["node" + n] = { text: "…", choices: [] }; State.save?.(); redraw(); }),
+      this._btn("▶ play from start", () => this._playDialog(d.start), "hot"),
+    );
+    ov.querySelector("#dvdClose").onclick = () => ov.remove();
+    document.body.append(ov); redraw();
+  },
+  _playDialog(id) {
+    const d = this._dialog(); const node = d.nodes[id]; if (!node) return;
+    document.getElementById("dvPlay")?.remove();
+    try { State.bus.emit("akuu:say", { text: node.text, tools: [], idle: true }); } catch {}
+    const ov = $(`<div id="dvPlay"><p></p><div class="dvp-choices"></div></div>`); ov.querySelector("p").textContent = node.text;
+    const ch = ov.querySelector(".dvp-choices");
+    (node.choices || []).forEach((c) => { const b = $(`<button class="dvp-c"></button>`); b.textContent = c.label || "…"; b.onclick = () => { ov.remove(); if (c.to && d.nodes[c.to]) this._playDialog(c.to); }; ch.append(b); });
+    if (!(node.choices || []).length) { const b = $(`<button class="dvp-c">✓ end</button>`); b.onclick = () => ov.remove(); ch.append(b); }
+    document.body.append(ov);
+  },
+
   // ---------------- AUDIO tab ----------------
   _tab_audio() {
     const A = window.CMF?.Audio; const s = State.settings;
@@ -785,6 +875,8 @@ export const DevMode = {
       this._btn("Proactive line", () => { try { window.CMF.Brain.proactive(); } catch {} }),
       this._btn("Particle burst", () => { try { window.CMF.ctx && window.CMF.magic?.fxBurst?.("sparkles"); } catch {} }),
     ]);
+    this._h("Dialogue");
+    this._grid([this._btn("💬 Dialogue tree editor", () => this._dialogEditor())]);
     this._h("AI prompt playground");
     let sys = "", msg = "";
     this._text("system / persona", "", (v) => sys = v, "You are a grumpy wizard…");
@@ -847,10 +939,10 @@ const FEATURES = [
   [1, "Scene", "global wireframe"], [1, "Global", "hotkey toggle (F8 / backtick)"], [1, "Global", "persistent dev button"],
   // BIG — batch 2 (now live)
   [1, "Object", "multi-select + group nudge"], [1, "Scene", "drag-drop model/image files"], [1, "Scene", "prefab library (save/spawn)"],
-  [0, "Collision", "paint navmesh walkable/blocked"], [0, "Collision", "auto-rebuild BVH from edits"], [1, "Light", "light gizmos + shadow preview"],
-  [0, "Look", "full color-grade curves editor"], [1, "Look", "weather/sky presets"], [1, "Material", "PBR texture-set uploader"],
+  [1, "Collision", "paint navmesh (block cells)"], [1, "Collision", "rebuild BVH + navmesh from edits"], [1, "Light", "light gizmos + shadow preview"],
+  [1, "Look", "colour-grade editor (6 controls)"], [1, "Look", "weather/sky presets"], [1, "Material", "PBR texture-set uploader"],
   [1, "Material", "material library + presets"], [1, "Image", "decal projection onto surfaces"], [1, "Camera", "cinematic camera tour"],
-  [1, "Camera", "orbit-around-target dolly"], [1, "Alice", "per-bone pose sliders (VRM)"], [0, "Alice", "dialogue tree editor"],
+  [1, "Camera", "orbit-around-target dolly"], [1, "Alice", "per-bone pose sliders (VRM)"], [1, "Alice", "dialogue tree editor + player"],
   [1, "Alice", "record / replay her movement"], [1, "UI", "drag to reposition HUD panels"], [1, "UI", "CSS inspector (click to edit)"],
   [1, "Notes", "pin notes to 3D locations"], [1, "Notes", "attach screenshot to a note"], [1, "Console", "command palette"],
   [1, "State", "rollback save-history snapshots"], [1, "Perf", "frame-time graph"], [1, "World", "hotspot editor integration"],
