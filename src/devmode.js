@@ -717,7 +717,7 @@ export const DevMode = {
   _recentRow(fn) { if (!this._recent?.length) return; const r = $(`<div class="dv-swatches"></div>`); this._recent.forEach((c) => { const s = $(`<button class="dv-sw" style="background:${c}"></button>`); s.onclick = () => fn(c); r.append(s); }); this.body.append(r); },
   _fav() { if (!this.sel?.name) return; const f = (State.settings.devFavs ||= []); if (!f.includes(this.sel.name)) f.push(this.sel.name); State.save?.(); this._status("★ " + this.sel.name); this._tab(this._curTab); },
   _favBar() { const f = State.settings.devFavs || []; if (!f.length) return; this._h("★ Favorites"); this._grid(f.slice(0, 8).map((n) => this._btn("★ " + n, () => { let hit = null; this.ctx.scene.traverse((o) => { if (o.name === n && !hit) hit = o; }); hit ? this._select(hit) : this._status("gone: " + n); }))); },
-  _share() { const url = location.origin + location.pathname; try { navigator.clipboard.writeText(url); this._status("live link copied ♡"); } catch { prompt("Share link:", url); } },
+  _share() { const url = location.origin + location.pathname; const p = navigator.clipboard?.writeText?.(url); if (p?.then) p.then(() => this._status("live link copied ♡")).catch(() => prompt("Share link:", url)); else prompt("Share link:", url); },
 
   // ---- camera tour / multi-select / cap-fps ----
   _tour() { const bm = State.settings.devCamBookmarks || []; if (bm.length < 2) return this._status("save 2+ views first"); let i = 0; const go = () => { if (i >= bm.length || !this.on) return; this._loadBookmark(bm[i]); i++; setTimeout(go, 2600); }; go(); this._status("cinematic tour…"); },
