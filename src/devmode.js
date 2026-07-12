@@ -27,9 +27,15 @@ export const DevMode = {
     addEventListener("keydown", (e) => {
       const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName) || document.activeElement?.isContentEditable;
       if (e.key === "F8" || (e.key === "`" && !typing && !e.metaKey && !e.ctrlKey)) { e.preventDefault(); this.toggle(); }
-      if (this.on) this._flyKey(e, true);
+      if (!this.on) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); this._palette(); }
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z" && !typing) { e.preventDefault(); this._undo(); }
+      else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y" && !typing) { e.preventDefault(); this._redo(); }
+      this._flyKey(e, true);
     });
     addEventListener("keyup", (e) => { if (this.fly) this._flyKey(e, false); });
+    // double-click a mesh to focus it
+    this.ctx.renderer?.domElement?.addEventListener("dblclick", (e) => { if (this.on) { this._pick(e, true); this._frame(); } });
     this._loadNotes();
     return this;
   },
@@ -63,8 +69,8 @@ export const DevMode = {
     let p = document.getElementById("devPanel");
     if (!p) { p = document.createElement("div"); p.id = "devPanel"; document.body.append(p); }
     const TABS = [
-      ["scene", "Scene"], ["object", "Object"], ["light", "Light"], ["look", "Look"],
-      ["image", "Image"], ["camera", "Camera"], ["alice", "Alice"], ["ui", "UI"],
+      ["scene", "Scene"], ["object", "Object"], ["light", "Light"], ["look", "Look"], ["world", "World"],
+      ["image", "Image"], ["camera", "Camera"], ["alice", "Alice"], ["audio", "Audio"], ["ui", "UI"],
       ["notes", "Notes"], ["console", "Console"], ["state", "State"], ["perf", "Perf"], ["features", "Features"],
     ];
     p.innerHTML = `
@@ -129,6 +135,10 @@ export const DevMode = {
       this._btn("Wireframe all", () => this._wireAll()),
       this._btn("Show collision", () => this._toggleHelper("collision")),
     ]);
+    this._h("Prefabs & export");
+    this._grid([this._btn("⬇ Export scene JSON", () => this._exportScene()), this._btn("Save prefab", () => this._savePrefab())]);
+    const prefabs = Object.keys(State.settings.devPrefabs || {});
+    if (prefabs.length) this._grid(prefabs.map((n) => this._btn("▣ " + n, () => this._spawnPrefab(n))));
     this._h("Scene tree");
     const list = $(`<div class="dv-list"></div>`);
     const named = [];
@@ -149,6 +159,14 @@ export const DevMode = {
       this._btn("Scale", () => this._gizmo("scale"), this._tcMode === "scale" ? "hot" : ""),
       this._btn("Gizmo off", () => this._detach()),
     ]);
+    this._grid([
+      this._btn("↩ Undo", () => this._undo()), this._btn("↪ Redo", () => this._redo()),
+      this._btn("Copy", () => this._copy()), this._btn("Paste", () => this._paste()),
+      this._btn("Rename", () => this._rename()), this._btn(o.userData.devLocked ? "Unlock 🔒" : "Lock", () => this._lockObj()),
+      this._btn(this._iso ? "Un-isolate" : "Isolate", () => this._isolate()), this._btn("Align to grid", () => this._align()),
+      this._btn("Drop (physics)", () => this._drop()), this._btn("Save prefab", () => this._savePrefab()),
+    ]);
+    this._slider("snap grid", 0, 2, 0.05, this._snap || 0, (v) => { this._snap = v || null; if (this.tc) this.tc.translationSnap = this._snap; });
     ["x", "y", "z"].forEach((ax) => this._slider(`pos ${ax}`, -20, 20, 0.01, o.position[ax], (v) => { o.position[ax] = v; }));
     this._slider("rot y°", -180, 180, 1, THREE.MathUtils.radToDeg(o.rotation.y), (v) => { o.rotation.y = THREE.MathUtils.degToRad(v); });
     this._slider("scale", 0.05, 6, 0.01, o.scale.x, (v) => o.scale.setScalar(v));
@@ -168,6 +186,11 @@ export const DevMode = {
       if ("metalness" in m) this._slider("metalness", 0, 1, 0.01, m.metalness, (v) => m.metalness = v);
       this._slider("opacity", 0, 1, 0.01, m.opacity ?? 1, (v) => { m.opacity = v; m.transparent = v < 1; });
       this._grid([this._btn(m.wireframe ? "Solid" : "Wireframe", () => { m.wireframe = !m.wireframe; this._tab("object"); })]);
+      this._h("Material presets");
+      this._grid(["gold", "glass", "neon", "matte", "mirror", "wood"].map((k) => this._btn(k, () => this._matPreset(k))));
+      let nrm = "";
+      this._text("normal/rough map URL", "", (u) => nrm = u, "https://…");
+      this._grid([this._btn("→ normalMap", () => this._pbr(nrm, "normalMap")), this._btn("→ roughnessMap", () => this._pbr(nrm, "roughnessMap"))]);
     }
     this._h("Collision");
     this._grid([
@@ -199,6 +222,7 @@ export const DevMode = {
       this._btn("＋ Spot", () => this._addLight("spot")),
       this._btn("＋ Directional", () => this._addLight("dir")),
     ]);
+    this._grid([this._btn("Toggle light helper", () => this._lightHelper())]);
   },
 
   // ============================================================ LOOK (atmosphere/postfx)
@@ -258,8 +282,13 @@ export const DevMode = {
       this._btn("Reset", () => cc?.setMode?.("orbit")),
     ]);
     if (cam) this._slider("FOV", 25, 100, 1, cam.fov, (v) => { cam.fov = v; cam.updateProjectionMatrix(); });
-    this._h("Bookmarks");
-    this._grid([this._btn("＋ Save view", () => this._saveBookmark()), this._btn("Screenshot", () => this._screenshot())]);
+    this._h("Bookmarks & capture");
+    this._grid([
+      this._btn("＋ Save view", () => this._saveBookmark()),
+      this._btn(this.ctx.camCtl?.orbit?.autoRotate ? "Dolly: ON" : "Orbit dolly", () => this._dolly(), this.ctx.camCtl?.orbit?.autoRotate ? "hot" : ""),
+      this._btn("📷 Screenshot", () => this._screenshot()),
+      this._btn("📷 No-HUD shot", () => this._screenshotClean()),
+    ]);
     const bl = $(`<div class="dv-list"></div>`); (State.settings.devCamBookmarks || []).forEach((bm, i) => { const it = $(`<button class="dv-it">🎥 view ${i + 1}</button>`); it.onclick = () => this._loadBookmark(bm); bl.append(it); }); this.body.append(bl);
     const pos = cam ? `${cam.position.x.toFixed(2)}, ${cam.position.y.toFixed(2)}, ${cam.position.z.toFixed(2)}` : "-";
     this.body.append($(`<div class="dv-mono">cam: ${pos}</div>`));
@@ -304,6 +333,8 @@ export const DevMode = {
     vars.forEach(([v, def]) => this._color(v, (cs.getPropertyValue(v).trim() || def), (c) => document.documentElement.style.setProperty(v, c)));
     this._h("UI scale");
     this._slider("root font", 12, 22, 0.5, parseFloat(getComputedStyle(document.documentElement).fontSize) || 16, (v) => document.documentElement.style.fontSize = v + "px");
+    this._h("Dev panel");
+    this._grid([this._btn("Toggle panel theme", () => this._panelTheme())]);
   },
 
   // ============================================================ NOTES (for Claude)
@@ -339,10 +370,14 @@ export const DevMode = {
       this._btn("Reload", () => location.reload()),
       this._btn("Reset save", () => { if (confirm("Wipe the save?")) { State.reset?.(); location.reload(); } }, "danger"),
     ]);
+    this._grid([this._btn("⌘K Command palette", () => this._palette()), this._btn("⌨ Shortcuts", () => this._cheatsheet())]);
   },
 
   // ============================================================ STATE
   _tab_state() {
+    this._h("Save snapshots");
+    this._grid([this._btn("📸 Snapshot now", () => this._snapshot())]);
+    try { const snaps = Object.keys(JSON.parse(localStorage.getItem("cmf.devsnaps") || "{}")).sort().reverse(); if (snaps.length) this._grid(snaps.slice(0, 6).map((ts) => this._btn("↺ " + new Date(+ts).toLocaleTimeString(), () => this._rollback(ts)))); } catch {}
     this._h("Settings editor");
     const s = State.settings;
     const search = $(`<input class="dv-conin" placeholder="filter keys…">`); this.body.append(search);
@@ -361,6 +396,9 @@ export const DevMode = {
 
   // ============================================================ PERF
   _tab_perf() {
+    this._h("Frame time (ms)");
+    const cv = $(`<canvas class="dv-graph" width="300" height="56"></canvas>`); this.body.append(cv);
+    this._drawGraph(cv);
     this._h("Renderer stats");
     this.body.append($(`<div class="dv-mono" id="dvPerfBody">…</div>`));
     this._h("Quality");
@@ -437,8 +475,14 @@ export const DevMode = {
       this.tc = new TC(this.ctx.camera, this.ctx.renderer.domElement);
       const helper = this.tc.getHelper ? this.tc.getHelper() : this.tc;
       this.tc._helperObj = helper; this.ctx.scene.add(helper);
-      this.tc.addEventListener("dragging-changed", (e) => { if (this.ctx.camCtl?.orbit) this.ctx.camCtl.orbit.enabled = !e.value; });
+      this.tc.addEventListener("dragging-changed", (e) => {
+        if (this.ctx.camCtl?.orbit) this.ctx.camCtl.orbit.enabled = !e.value;
+        const o = this.tc.object; if (!o) return;
+        if (e.value) { this._dragFrom = { o, p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone() }; }
+        else if (this._dragFrom?.o === o) { const f = this._dragFrom, t = { p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone() }; this._hist(() => { o.position.copy(f.p); o.quaternion.copy(f.q); o.scale.copy(f.s); }, () => { o.position.copy(t.p); o.quaternion.copy(t.q); o.scale.copy(t.s); }); this._dragFrom = null; }
+      });
     }
+    this.tc.translationSnap = this._snap || null;
     this.tc.setMode(mode); this.tc.attach(this.sel);
     this.panel.querySelectorAll(".dv-grid .dv-b").forEach((b) => {}); this._tab("object");
   },
@@ -543,23 +587,176 @@ export const DevMode = {
   _importSave() { const i = document.createElement("input"); i.type = "file"; i.accept = ".json"; i.onchange = () => { const f = i.files[0]; if (!f) return; f.text().then((t) => { try { Object.assign(State.settings, JSON.parse(t)); State.save?.(); location.reload(); } catch (e) { alert("bad save file"); } }); }; i.click(); },
 
   // picking
-  _pick(e) {
-    if (!this.on || !this._pickMode || this.tc?.dragging) return;
+  _pick(e, force = false) {
+    if (!this.on || this.tc?.dragging) return;
+    if (!(this._pickMode || this._measuring || this._pinning || force)) return;
     const r = this.ctx.renderer.domElement.getBoundingClientRect();
     const m = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     const ray = new THREE.Raycaster(); ray.setFromCamera(m, this.ctx.camera);
     const hit = ray.intersectObjects(this.ctx.scene.children, true).find((h) => h.object.isMesh && h.object.visible);
-    if (hit) { let o = hit.object; while (o.parent && o.parent !== this.ctx.scene && !o.name) o = o.parent; this._select(o); }
+    if (!hit) return;
+    if (this._pinning) { this._addPin(hit.point.clone()); this._pinning = false; return; }
+    if (this._measuring) { (this._measPts ||= []).push(hit.point.clone()); if (this._measPts.length === 2) { const d = this._measPts[0].distanceTo(this._measPts[1]); this._drawMeasure(this._measPts[0], this._measPts[1]); this._status("distance: " + d.toFixed(2) + " m"); this._measPts = []; } else this._status("measure: first point set — click the second"); return; }
+    let o = hit.object; while (o.parent && o.parent !== this.ctx.scene && !o.name) o = o.parent;
+    if (o.userData.devLocked) { this._status("🔒 locked: " + (o.name || o.type)); return; }
+    this._select(o);
   },
+  _drawMeasure(a, b) { if (this._measLine) this.ctx.scene.remove(this._measLine); this._measLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: 0x39ff88 })); this.ctx.scene.add(this._measLine); },
 
   // perf
   _perfLoop() { cancelAnimationFrame(this._pf); const tick = () => { if (!this.on) return; this._perfHead(); this._pf = requestAnimationFrame(tick); }; tick(); },
   _perfHead() { const info = this.ctx.renderer?.info; const el = document.getElementById("dvPerf"); if (el && info) el.textContent = `${info.render.calls} calls · ${(info.render.triangles / 1000).toFixed(0)}k tris`; },
   _perfBody() { const info = this.ctx.renderer?.info; const el = document.getElementById("dvPerfBody"); if (!el || !info) return; el.textContent = `draw calls: ${info.render.calls}\ntriangles: ${info.render.triangles}\ngeometries: ${info.memory.geometries}\ntextures: ${info.memory.textures}\nprograms: ${info.programs?.length ?? "?"}\npixelRatio: ${this.ctx.renderer.getPixelRatio()}`; setTimeout(() => { if (this.on && this._curTab === "perf") this._perfBody(); }, 500); },
+  _drawGraph(cv) {
+    const ctx = cv.getContext("2d");
+    const draw = () => {
+      if (!this.on || this._curTab !== "perf" || !cv.isConnected) return;
+      const w = cv.width, h = cv.height, ft = this._ft || [];
+      ctx.fillStyle = "#0f0a16"; ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = "#39ff8855"; ctx.beginPath(); ctx.moveTo(0, h - 16.6); ctx.lineTo(w, h - 16.6); ctx.stroke();   // 60fps reference
+      ctx.fillStyle = "#7dd3fc"; const bw = w / 120;
+      for (let i = 0; i < ft.length; i++) { const v = Math.min(50, ft[i]); const bh = (v / 50) * h; ctx.fillRect(i * bw, h - bh, Math.max(1, bw - 1), bh); }
+      requestAnimationFrame(draw);
+    };
+    draw();
+  },
+
+  // ---------------- history (undo/redo) ----------------
+  _hist(undo, redo) { (this._H ||= []).push({ undo, redo }); if (this._H.length > 60) this._H.shift(); this._R = []; },
+  _undo() { const a = (this._H || []).pop(); if (!a) return this._status("nothing to undo"); try { a.undo(); } catch {} (this._R ||= []).push(a); this._status("undone ↩"); if (this.on) this._tab(this._curTab); },
+  _redo() { const a = (this._R || []).pop(); if (!a) return this._status("nothing to redo"); try { a.redo(); } catch {} (this._H ||= []).push(a); this._status("redone ↪"); if (this.on) this._tab(this._curTab); },
+  _recordAdd(o) { this._hist(() => { o.parent?.remove(o); this.added = this.added.filter((x) => x !== o); if (this.sel === o) this.sel = null; }, () => { this.ctx.scene.add(o); this.added.push(o); }); },
+
+  // ---------------- clipboard ----------------
+  _copy() { if (!this.sel) return; try { this._clip = this.sel.toJSON(); this._status("copied " + (this.sel.name || this.sel.type)); } catch { this._status("copy failed"); } },
+  _paste() { if (!this._clip) return this._status("clipboard empty"); try { const o = new THREE.ObjectLoader().parse(this._clip); o.name = (o.name || "obj") + "_paste"; o.position.x += 0.6; this.ctx.scene.add(o); this.added.push(o); this._recordAdd(o); this._select(o); this._status("pasted"); } catch (e) { this._status("paste failed: " + e.message); } },
+  _rename() { if (!this.sel) return; const v = prompt("Rename:", this.sel.name || ""); if (v != null) { this.sel.name = v; this._tab(this._curTab); } },
+  _lockObj() { if (!this.sel) return; this.sel.userData.devLocked = !this.sel.userData.devLocked; this._status(this.sel.userData.devLocked ? "locked 🔒" : "unlocked"); this._tab("object"); },
+  _isolate() { const sc = this.ctx.scene; if (this._iso) { this._iso.forEach(([o, v]) => o.visible = v); this._iso = null; this._status("un-isolated"); } else { this._iso = []; sc.children.forEach((o) => { if (o !== this.sel && o.isMesh) { this._iso.push([o, o.visible]); o.visible = false; } }); this._status("isolated"); } },
+  _align() { if (!this.sel) return; const g = this._snap || 0.25; ["x", "y", "z"].forEach((a) => this.sel.position[a] = Math.round(this.sel.position[a] / g) * g); this._tab("object"); },
+
+  // ---------------- material presets / PBR textures ----------------
+  _matPreset(kind) {
+    const m = this.sel?.material; if (!m || Array.isArray(m)) return;
+    const set = (c, r, mt, e = "#000000", op = 1) => { m.color?.set(c); if ("roughness" in m) m.roughness = r; if ("metalness" in m) m.metalness = mt; m.emissive?.set(e); m.opacity = op; m.transparent = op < 1; m.needsUpdate = true; };
+    ({ gold: () => set("#ffd27a", 0.25, 1), glass: () => set("#bfe6ff", 0.05, 0, "#000000", 0.35), neon: () => set("#ff4fa3", 0.4, 0, "#ff2f8f"), matte: () => set("#cfc7d8", 0.95, 0), mirror: () => set("#ffffff", 0.02, 1), wood: () => set("#8a5a34", 0.7, 0) }[kind] || (() => {}))();
+    this._status("material: " + kind); this._tab("object");
+  },
+  _pbr(url, slot) { if (!url) return; new THREE.TextureLoader().load(url, (tex) => { const m = this.sel?.material; if (m) { m[slot] = tex; m.needsUpdate = true; this._status(slot + " set"); } }, undefined, () => this._status(slot + " failed")); },
+
+  // ---------------- world: cycle / sky presets / dolly / spawn ----------------
+  _autoCycle() { this._cycle = !this._cycle; this._status("day/night cycle " + (this._cycle ? "on" : "off")); this._tab("world"); },
+  _skyPreset(name) { const C = window.CMF || {}; const P = { noon: 12, golden: 18, night: 23, dawn: 6.5, fog: 15 }[name]; if (P == null) return; State.world.timeOfDay = P; try { C.Atmosphere?.setTime?.(P); C.PostFX?.setTime?.(P); } catch {} if (name === "fog") this.ctx.scene.fog = new THREE.FogExp2(0x9aa0b0, 0.03); this._status("sky: " + name); },
+  _dolly() { const o = this.ctx.camCtl?.orbit; if (!o) return; o.autoRotate = !o.autoRotate; o.autoRotateSpeed = 1.4; this._status("dolly " + (o.autoRotate ? "on" : "off")); this._tab("camera"); },
+  _spawnDummy() { const g = new THREE.Group(); const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.25, 0.8, 6, 12), new THREE.MeshStandardMaterial({ color: 0x88aaff, roughness: 0.6 })); body.position.y = 0.85; const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 20, 16), new THREE.MeshStandardMaterial({ color: 0xffd9b0 })); head.position.y = 1.55; g.add(body, head); g.name = "npc_" + (this.added.length + 1); this._placeInFront(g); g.traverse((o) => { o.castShadow = true; }); this.ctx.scene.add(g); this.added.push(g); this._recordAdd(g); this._select(g); this._status("spawned NPC"); },
+
+  // ---------------- AI playground / hotspots ----------------
+  _playground(sys, msg, out) { out.textContent = "…thinking"; const b = window.CMF?.Brain; if (!b?.sendAs) { out.textContent = "no brain / key"; return; } b.sendAs(sys || "You are a helpful test character.", [], msg).then((t) => out.textContent = t || "(empty)").catch((e) => out.textContent = "⚠ " + e.message); },
+  _openHotspots() { this.toggle(false); (document.getElementById("hotspotBtn") || document.querySelector('[title*="otspot"]'))?.click?.(); },
+
+  // ---------------- palette / cheatsheet / snapshots ----------------
+  _palette() {
+    let ov = document.getElementById("dvPalette"); if (ov) { ov.remove(); return; }
+    ov = $(`<div id="dvPalette"><input placeholder="type a command…" autocomplete="off"><div class="dv-pl"></div></div>`); document.body.append(ov);
+    const inp = ov.querySelector("input"), list = ov.querySelector(".dv-pl");
+    const render = (q = "") => { list.innerHTML = ""; PALETTE.filter((c) => c[0].toLowerCase().includes(q.toLowerCase())).slice(0, 14).forEach((c) => { const b = $(`<button>${c[0]}</button>`); b.onclick = () => { ov.remove(); try { c[1](this); } catch {} }; list.append(b); }); };
+    inp.oninput = () => render(inp.value); inp.onkeydown = (e) => { if (e.key === "Escape") ov.remove(); if (e.key === "Enter") list.querySelector("button")?.click(); };
+    render(); setTimeout(() => inp.focus(), 30);
+  },
+  _cheatsheet() { alert("Dev Mode shortcuts\n\n F8 or `   toggle Dev Mode\n Ctrl/⌘+K  command palette\n Ctrl/⌘+Z / +Y  undo / redo\n Pick mode → click any object\n Gizmo: Move / Rotate / Scale\n Fly cam: WASD + Q/E\n Double-click a mesh: focus it\n\n Everything autosaves to your browser."); },
+  _snapshot() { try { const all = JSON.parse(localStorage.getItem("cmf.devsnaps") || "{}"); all[Date.now()] = JSON.stringify(State.settings); const keys = Object.keys(all).sort(); while (keys.length > 10) delete all[keys.shift()]; localStorage.setItem("cmf.devsnaps", JSON.stringify(all)); } catch {} this._status("snapshot saved"); this._tab("state"); },
+  _rollback(ts) { try { const all = JSON.parse(localStorage.getItem("cmf.devsnaps") || "{}"); if (all[ts] && confirm("Roll back the save to this snapshot? (reloads)")) { Object.assign(State.settings, JSON.parse(all[ts])); State.save?.(); location.reload(); } } catch {} },
+
+  // ---------------- export / prefabs / physics ----------------
+  _exportScene() {
+    const objs = this.added.map((o) => { try { return o.toJSON(); } catch { return null; } }).filter(Boolean);
+    const body = JSON.stringify({ objects: objs, ts: Date.now() }, null, 1);
+    fetch("/dev/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "scene.json", body }) }).then((r) => this._status(r.ok ? "→ dev-exports/scene.json ♡" : "downloaded")).catch(() => {});
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([body], { type: "application/json" })); a.download = "cmf-scene.json"; a.click();
+  },
+  _savePrefab() { if (!this.sel) return; const name = prompt("Prefab name:", this.sel.name || "prefab"); if (!name) return; try { (State.settings.devPrefabs ||= {})[name] = this.sel.toJSON(); State.save?.(); this._status("prefab: " + name); this._tab("scene"); } catch { this._status("prefab failed"); } },
+  _spawnPrefab(name) { const j = State.settings.devPrefabs?.[name]; if (!j) return; try { const o = new THREE.ObjectLoader().parse(j); o.position.x += 0.5; this.ctx.scene.add(o); this.added.push(o); this._recordAdd(o); this._select(o); this._status("spawned " + name); } catch { this._status("spawn failed"); } },
+  _drop() { if (!this.sel) return; (this._phys ||= []).push({ o: this.sel, vy: 0 }); this._status("dropped (gravity + bounce)"); },
+
+  // ---------------- clean screenshot / light helper / measure / pins / theme ----------------
+  _screenshotClean() { const hide = [this.panel, document.getElementById("devBtn"), document.getElementById("hud"), document.getElementById("chatDock")].filter(Boolean); const prev = hide.map((e) => e.style.display); hide.forEach((e) => e.style.display = "none"); requestAnimationFrame(() => { this._screenshot(); hide.forEach((e, i) => e.style.display = prev[i]); }); },
+  _lightHelper() { const L = this.sel; if (!L?.isLight) return; if (L.userData._helper) { L.userData._helper.parent?.remove(L.userData._helper); L.userData._helper = null; this._status("helper off"); return; } let h; if (L.isPointLight) h = new THREE.PointLightHelper(L, 0.4); else if (L.isSpotLight) h = new THREE.SpotLightHelper(L); else if (L.isDirectionalLight) h = new THREE.DirectionalLightHelper(L, 1); if (h) { this.ctx.scene.add(h); L.userData._helper = h; this._status("light helper on"); } },
+  _measure() { this._measuring = !this._measuring; this._measPts = []; this._status(this._measuring ? "click two points to measure" : "measure off"); },
+  _pinMode() { this._pinning = !this._pinning; this._status(this._pinning ? "click in the world to pin a note" : "pin off"); },
+  _addPin(point) { const text = prompt("Pin note here:"); if (text == null) return; const s = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffd447 })); s.position.copy(point); s.userData.pinText = text; s.name = "pin"; this.ctx.scene.add(s); (this._pins ||= []).push(s); this._saveNote(`[PIN @ ${point.x.toFixed(1)},${point.y.toFixed(1)},${point.z.toFixed(1)}] ${text}`); this._status("pin dropped + noted"); },
+  _panelTheme() { this.panel.classList.toggle("dv-light"); this._status("panel theme toggled"); },
+
+  // ---------------- AUDIO tab ----------------
+  _tab_audio() {
+    const A = window.CMF?.Audio; const s = State.settings;
+    this._h("Mixer");
+    this._slider("music vol", 0, 1, 0.01, s.musicVolume ?? 0.5, (v) => { State.set("musicVolume", v); A?.setMusicVolume?.(v); });
+    this._slider("sfx vol", 0, 1, 0.01, s.sfxVolume ?? 0.6, (v) => State.set("sfxVolume", v));
+    if (A?.master) this._slider("master vol", 0, 1, 0.01, A.master.gain.value, (v) => A.master.gain.value = v);
+    this._h("Toggles");
+    this._grid([
+      this._btn((s.musicEnabled ? "Music: on" : "Music: off"), () => { State.set("musicEnabled", !s.musicEnabled); if (s.musicEnabled) { A?.resume?.(); A?.startMusic?.(); } else A?.stopMusic?.(); this._tab("audio"); }, s.musicEnabled ? "hot" : ""),
+      this._btn("Ambient toggle", () => { try { const Am = window.CMF.Ambient; Am._on = !Am._on; } catch {} }),
+    ]);
+    this._h("Trigger SFX");
+    this._grid(["pop", "click", "shutter", "chime", "success", "error"].map((n) => this._btn(n, () => { try { A?.resume?.(); A?.sfx?.(n); } catch {} })));
+  },
+
+  // ---------------- WORLD tab ----------------
+  _tab_world() {
+    this._h("Time");
+    this._grid([this._btn(this._cycle ? "Auto-cycle: ON" : "Auto-cycle: off", () => this._autoCycle(), this._cycle ? "hot" : "")]);
+    if (this._cycle) this._slider("cycle speed", 0.1, 4, 0.1, this._cycleSpeed || 1, (v) => this._cycleSpeed = v);
+    this._h("Sky / weather presets");
+    this._grid(["noon", "golden", "dawn", "night", "fog"].map((n) => this._btn(n, () => this._skyPreset(n))));
+    this._h("Spawn");
+    this._grid([this._btn("＋ Dummy NPC", () => this._spawnDummy()), this._btn("＋ Model URL", () => { const u = prompt("Character model URL:"); if (u) this._addModel(u); })]);
+    this._h("World tools");
+    this._grid([
+      this._btn("🧭 Hotspot editor", () => this._openHotspots()),
+      this._btn(this._pinning ? "Pin: ON" : "📌 Pin note in world", () => this._pinMode(), this._pinning ? "hot" : ""),
+      this._btn(this._measuring ? "Measure: ON" : "📏 Measure", () => this._measure(), this._measuring ? "hot" : ""),
+    ]);
+    this._h("Quest / event tester");
+    this._grid([
+      this._btn("Trigger reminder", () => State.bus.emit("reminder:fired", "dev test reminder")),
+      this._btn("Proactive line", () => { try { window.CMF.Brain.proactive(); } catch {} }),
+      this._btn("Particle burst", () => { try { window.CMF.ctx && window.CMF.magic?.fxBurst?.("sparkles"); } catch {} }),
+    ]);
+    this._h("AI prompt playground");
+    let sys = "", msg = "";
+    this._text("system / persona", "", (v) => sys = v, "You are a grumpy wizard…");
+    this._text("message", "", (v) => msg = v, "say hi");
+    const out = $(`<div class="dv-mono" style="min-height:34px">reply appears here…</div>`);
+    this._grid([this._btn("▶ Run", () => this._playground(sys, msg, out))]);
+    this.body.append(out);
+  },
 
   // called every frame from main loop
-  update(dt) { this._flyUpdate(dt); },
+  update(dt) {
+    this._flyUpdate(dt);
+    // day/night auto-cycle
+    if (this._cycle) { State.world.timeOfDay = ((State.world.timeOfDay || 12) + dt * (this._cycleSpeed || 1) * 0.4) % 24; try { window.CMF.Atmosphere?.setTime?.(State.world.timeOfDay); window.CMF.PostFX?.setTime?.(State.world.timeOfDay); } catch {} }
+    // simple physics drop (gravity + floor bounce)
+    if (this._phys?.length) { for (const b of this._phys) { b.vy -= 9.8 * dt; b.o.position.y += b.vy * dt; if (b.o.position.y <= 0) { b.o.position.y = 0; b.vy = -b.vy * 0.45; if (Math.abs(b.vy) < 0.4) b.settled = true; } } this._phys = this._phys.filter((b) => !b.settled); }
+    // frame-time sampling for the graph
+    (this._ft ||= []).push(dt * 1000); if (this._ft.length > 120) this._ft.shift();
+  },
 };
+
+// -------- command palette actions (⌘K) --------------------------------------
+const PALETTE = [
+  ["Add box", (D) => D._addPrim("box")], ["Add sphere", (D) => D._addPrim("sphere")], ["Add point light", (D) => D._addLight("point")],
+  ["Undo", (D) => D._undo()], ["Redo", (D) => D._redo()], ["Copy object", (D) => D._copy()], ["Paste object", (D) => D._paste()],
+  ["Duplicate", (D) => D._dup()], ["Delete selected", (D) => D._del()], ["Isolate selected", (D) => D._isolate()], ["Frame selected", (D) => D._frame()],
+  ["Screenshot", (D) => D._screenshot()], ["Screenshot (no HUD)", (D) => D._screenshotClean()], ["Export scene JSON", (D) => D._exportScene()],
+  ["Day/night cycle", (D) => D._autoCycle()], ["Sky: golden hour", (D) => D._skyPreset("golden")], ["Sky: night", (D) => D._skyPreset("night")], ["Sky: noon", (D) => D._skyPreset("noon")],
+  ["Orbit dolly", (D) => D._dolly()], ["Free-fly camera", (D) => D._toggleFly()], ["Spawn NPC", (D) => D._spawnDummy()],
+  ["Grid helper", (D) => D._toggleHelper("grid")], ["Wireframe all", (D) => D._wireAll()], ["Measure tool", (D) => D._measure()],
+  ["Pin note in world", (D) => D._pinMode()], ["Snapshot save", (D) => D._snapshot()], ["Shortcuts help", (D) => D._cheatsheet()],
+  ["Alice: wink", () => { try { window.CMF.akuu.setExpression("wink"); } catch {} }], ["Alice: wave", () => { try { (window.CMF.akuu.custom?.gesture || window.CMF.akuu.gesture)?.call(window.CMF.akuu.custom || window.CMF.akuu, "wave", 0); } catch {} }],
+  ["Toggle Freeze AI", () => { try { window.CMF.State.set("frozen", !window.CMF.State.settings.frozen); } catch {} }], ["Reload page", () => location.reload()],
+];
 
 // -------- the 90 BIG + 30 small feature roadmap (✅ = live in this build) -------
 const FEATURES = [
@@ -583,27 +780,27 @@ const FEATURES = [
   [1, "Console", "reset save / reload"], [1, "State", "live settings editor + search"], [1, "State", "toggle boolean flags"],
   [1, "Perf", "draw calls / tris / memory HUD"], [1, "Perf", "pixel ratio + shadow + postfx toggles"], [1, "Scene", "grid + axes helpers"],
   [1, "Scene", "global wireframe"], [1, "Global", "hotkey toggle (F8 / backtick)"], [1, "Global", "persistent dev button"],
-  // BIG — planned
-  [0, "Object", "multi-select + group transform"], [0, "Scene", "drag-drop model files onto window"], [0, "Scene", "prefab library (save/spawn)"],
-  [0, "Collision", "paint navmesh walkable/blocked"], [0, "Collision", "auto-rebuild BVH from edits"], [0, "Light", "light gizmos + shadow preview"],
-  [0, "Look", "full color-grade curves editor"], [0, "Look", "weather/sky presets"], [0, "Material", "PBR texture-set uploader"],
-  [0, "Material", "material library + presets"], [0, "Image", "decal projection onto walls"], [0, "Camera", "cinematic keyframe timeline"],
-  [0, "Camera", "orbit-around-target dolly"], [0, "Alice", "pose editor (per-bone)"], [0, "Alice", "dialogue tree editor"],
+  // BIG — batch 2 (now live)
+  [0, "Object", "multi-select + group transform"], [0, "Scene", "drag-drop model files onto window"], [1, "Scene", "prefab library (save/spawn)"],
+  [0, "Collision", "paint navmesh walkable/blocked"], [0, "Collision", "auto-rebuild BVH from edits"], [1, "Light", "light gizmos + shadow preview"],
+  [0, "Look", "full color-grade curves editor"], [1, "Look", "weather/sky presets"], [1, "Material", "PBR texture-set uploader"],
+  [1, "Material", "material library + presets"], [0, "Image", "decal projection onto walls"], [0, "Camera", "cinematic keyframe timeline"],
+  [1, "Camera", "orbit-around-target dolly"], [0, "Alice", "pose editor (per-bone)"], [0, "Alice", "dialogue tree editor"],
   [0, "Alice", "record/replay her actions"], [0, "UI", "drag to reposition HUD panels"], [0, "UI", "full CSS inspector"],
-  [0, "Notes", "pin notes to 3D locations"], [0, "Notes", "attach screenshot to a note"], [0, "Console", "command palette"],
-  [0, "State", "diff & rollback save history"], [0, "Perf", "frame-time graph"], [0, "World", "hotspot editor integration"],
-  [0, "World", "day/night auto-cycle editor"], [0, "World", "spawn NPC / other characters"], [0, "Audio", "per-channel mixer"],
-  [0, "Audio", "trigger/preview SFX"], [0, "Physics", "gravity/bounce sandbox toggles"], [0, "Export", "export edited scene to JSON"],
-  [0, "Export", "one-click share build"], [0, "Story", "quest/event trigger tester"], [0, "AI", "prompt playground in-game"],
+  [1, "Notes", "pin notes to 3D locations"], [0, "Notes", "attach screenshot to a note"], [1, "Console", "command palette"],
+  [1, "State", "rollback save-history snapshots"], [1, "Perf", "frame-time graph"], [1, "World", "hotspot editor integration"],
+  [1, "World", "day/night auto-cycle"], [1, "World", "spawn NPC / other characters"], [1, "Audio", "per-channel mixer"],
+  [1, "Audio", "trigger/preview SFX"], [1, "Physics", "gravity/bounce drop sandbox"], [1, "Export", "export edited scene to JSON"],
+  [0, "Export", "one-click share build"], [1, "World", "quest/event trigger tester"], [1, "AI", "prompt playground in-game"],
   // SMALL (30)
   [1, "small", "status line feedback"], [1, "small", "selected object highlighted in CMF.devSel"], [1, "small", "esc-safe hotkeys while typing"],
   [1, "small", "color pickers everywhere"], [1, "small", "sliders show live value"], [1, "small", "scene tree icons"],
   [1, "small", "danger buttons styled red"], [1, "small", "active tool highlighted"], [1, "small", "notes timestamped"],
   [1, "small", "console history scroll"], [1, "small", "feature counter"], [1, "small", "camera position readout"],
-  [0, "small", "keyboard shortcut cheat-sheet"], [0, "small", "undo last edit"], [0, "small", "redo"],
-  [0, "small", "copy object as JSON"], [0, "small", "paste object"], [0, "small", "lock object"],
-  [0, "small", "rename object inline"], [0, "small", "duplicate along axis"], [0, "small", "align to grid"],
-  [0, "small", "measure tool"], [0, "small", "isolate selected"], [0, "small", "focus-on-double-click"],
-  [0, "small", "recent colors palette"], [0, "small", "favorite objects bar"], [0, "small", "snap increment setting"],
-  [0, "small", "toggle vsync/cap fps"], [0, "small", "screenshot with/without HUD"], [0, "small", "dark/light panel theme"],
+  [1, "small", "keyboard shortcut cheat-sheet"], [1, "small", "undo last edit"], [1, "small", "redo"],
+  [1, "small", "copy object as JSON"], [1, "small", "paste object"], [1, "small", "lock object"],
+  [1, "small", "rename object inline"], [0, "small", "duplicate along axis"], [1, "small", "align to grid"],
+  [1, "small", "measure tool"], [1, "small", "isolate selected"], [1, "small", "focus-on-double-click"],
+  [0, "small", "recent colors palette"], [0, "small", "favorite objects bar"], [1, "small", "snap increment setting"],
+  [0, "small", "toggle vsync/cap fps"], [1, "small", "screenshot with/without HUD"], [1, "small", "dark/light panel theme"],
 ];
