@@ -38,6 +38,7 @@ import { LiveVoice } from "./livevoice.js";
 import { Episodes } from "./memories.js";
 import { Director } from "./director.js";
 import { LiveFace } from "./liveface.js";
+import { OfflineLife } from "./offlinelife.js";
 import { Mapper } from "./mapper.js";
 import { PostFX } from "./postfx.js";
 import { Atmosphere } from "./atmosphere.js";
@@ -231,6 +232,7 @@ LiveVoice.init({ brain: Brain, audio: Audio, akuu, ui: UI });
 Episodes.init({ brain: Brain, akuu, ui: UI });
 Director.init({ akuu, camCtl, runAbility: (id, a) => runAbility(id, a, ctx) });
 LiveFace.init({ akuu, emotion: Emotion });
+OfflineLife.init({ phone: Phone, ui: UI });
 Reflection.init({ brain: Brain, ui: UI, get magic() { return ctx.magic; }, get lifesim() { return ctx.lifesim; } });
 ctx.reflection = Reflection;
 HudMenu.init();   // gather the tool buttons behind one ☰ menu (observer catches late ones)
@@ -636,5 +638,5 @@ document.querySelectorAll("[data-cammode]").forEach((b) =>
   b.addEventListener("click", () => camCtl.setMode(b.dataset.cammode)));
 
 // expose for debugging / admin console
-window.CMF = { State, dorm, akuu, Brain, UI, Audio, ctx, cameraFx, camera, controls: camCtl.orbit, camCtl, scene, Emotion, Studio, RAG, Lifesim, Phone, Build, Story, Minigames, Mobile, PostFX, Atmosphere, Ambient, Icons, DevMode, LiveVoice, Episodes, Director, LiveFace };
+window.CMF = { State, dorm, akuu, Brain, UI, Audio, ctx, cameraFx, camera, controls: camCtl.orbit, camCtl, scene, Emotion, Studio, RAG, Lifesim, Phone, Build, Story, Minigames, Mobile, PostFX, Atmosphere, Ambient, Icons, DevMode, LiveVoice, Episodes, Director, LiveFace, OfflineLife };
 console.log("%cCatch Me First ♡", "font-size:20px;color:#ff6ba6", "— Akuu is awake. Set your Groq key in ⚙️.");
