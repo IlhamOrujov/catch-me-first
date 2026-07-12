@@ -365,7 +365,7 @@ export const Brain = {
     try {
       State.bus.emit("brain:thinking", true);
       try { this.ctx?.akuu.setExpression("thinking"); } catch {}
-      if (userText && !silent) { State.conversation.push({ role: "user", content: userText }); State.stats.messages++; Emotion.observeUser?.(userText); }
+      if (userText && !silent) { State.conversation.push({ role: "user", content: userText }); State.stats.messages++; Emotion.observeUser?.(userText); State.bus.emit("user:said", userText); }
 
       try { if (userText) await RAG.prepare(userText); } catch {}   // semantic recall for this turn
       const messages = this._messages();
