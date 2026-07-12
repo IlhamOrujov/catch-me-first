@@ -36,6 +36,9 @@ export const DevMode = {
     addEventListener("keyup", (e) => { if (this.fly) this._flyKey(e, false); });
     // double-click a mesh to focus it
     this.ctx.renderer?.domElement?.addEventListener("dblclick", (e) => { if (this.on) { this._pick(e, true); this._frame(); } });
+    // drag-drop model/image files → add to scene (capture, so it beats the game's Akuu loader)
+    addEventListener("dragover", (e) => { if (this.on) e.preventDefault(); }, true);
+    addEventListener("drop", (e) => { if (!this.on) return; const f = e.dataTransfer?.files?.[0]; if (!f) return; e.preventDefault(); e.stopPropagation(); const url = URL.createObjectURL(f); if (/\.(glb|gltf|vrm|fbx|obj)$/i.test(f.name)) this._addModel(url); else if (/\.(png|jpe?g|webp|gif)$/i.test(f.name)) this._addImage(url); }, true);
     this._loadNotes();
     return this;
   },
@@ -104,7 +107,7 @@ export const DevMode = {
     wrap.append(s); this.body.append(wrap); return s;
   },
   _text(label, val, fn, ph = "") { const wrap = $(`<div class="dv-field"><label>${label}</label></div>`); const i = $(`<input type="text" placeholder="${ph}" value="${(val ?? "").toString().replace(/"/g, "&quot;")}">`); i.onchange = () => fn(i.value); wrap.append(i); this.body.append(wrap); return i; },
-  _color(label, val, fn) { const wrap = $(`<div class="dv-row"><label>${label}</label></div>`); const i = $(`<input type="color" value="${val}">`); i.oninput = () => fn(i.value); wrap.append(i); this.body.append(wrap); return i; },
+  _color(label, val, fn) { const wrap = $(`<div class="dv-row"><label>${label}</label></div>`); const i = $(`<input type="color" value="${val}">`); i.oninput = () => { this._rec(i.value); fn(i.value); }; wrap.append(i); this.body.append(wrap); return i; },
   _h(t) { this.body.append($(`<div class="dv-h">${t}</div>`)); },
 
   // ============================================================ SCENE
@@ -136,7 +139,7 @@ export const DevMode = {
       this._btn("Show collision", () => this._toggleHelper("collision")),
     ]);
     this._h("Prefabs & export");
-    this._grid([this._btn("⬇ Export scene JSON", () => this._exportScene()), this._btn("Save prefab", () => this._savePrefab())]);
+    this._grid([this._btn("⬇ Export scene JSON", () => this._exportScene()), this._btn("Save prefab", () => this._savePrefab()), this._btn("🔗 Share link", () => this._share())]);
     const prefabs = Object.keys(State.settings.devPrefabs || {});
     if (prefabs.length) this._grid(prefabs.map((n) => this._btn("▣ " + n, () => this._spawnPrefab(n))));
     this._h("Scene tree");
@@ -150,8 +153,10 @@ export const DevMode = {
 
   // ============================================================ OBJECT
   _tab_object() {
+    this._favBar();
+    if (this._multi?.length) { this._h("Multi-select (" + this._multi.length + ")"); this._grid([this._btn("nudge +X", () => this._multiNudge("x", this._snap || 0.25)), this._btn("+Y", () => this._multiNudge("y", this._snap || 0.25)), this._btn("+Z", () => this._multiNudge("z", this._snap || 0.25)), this._btn("clear", () => this._clearMulti(), "danger")]); }
     const o = this.sel;
-    if (!o) { this.body.append($(`<i class="dv-dim">Nothing selected. Use Scene → Pick mode, or click a name in the tree.</i>`)); return; }
+    if (!o) { this.body.append($(`<i class="dv-dim">Nothing selected. Pick mode, the tree, or shift-click for multi-select.</i>`)); return; }
     this._h(`Selected: ${o.name || o.type}`);
     this._grid([
       this._btn("Move", () => this._gizmo("translate"), this._tcMode === "translate" ? "hot" : ""),
@@ -175,12 +180,12 @@ export const DevMode = {
       this._btn(o.visible ? "Hide" : "Show", () => { o.visible = !o.visible; this._tab("object"); }),
       this._btn("Delete", () => this._del(), "danger"),
     ]);
-    this._grid([this._btn("Dup +X", () => this._dup("x")), this._btn("Dup +Y", () => this._dup("y")), this._btn("Dup +Z", () => this._dup("z"))]);
+    this._grid([this._btn("Dup +X", () => this._dup("x")), this._btn("Dup +Y", () => this._dup("y")), this._btn("Dup +Z", () => this._dup("z")), this._btn("★ Favorite", () => this._fav())]);
     // material
     const m = o.material && !Array.isArray(o.material) ? o.material : null;
     if (m) {
       this._h("Material");
-      if (m.color) this._color("color", "#" + m.color.getHexString(), (c) => m.color.set(c));
+      if (m.color) { this._color("color", "#" + m.color.getHexString(), (c) => m.color.set(c)); this._recentRow((c) => { m.color.set(c); this._status("applied " + c); }); }
       if (m.emissive) this._color("emissive", "#" + m.emissive.getHexString(), (c) => m.emissive.set(c));
       if ("roughness" in m) this._slider("roughness", 0, 1, 0.01, m.roughness, (v) => m.roughness = v);
       if ("metalness" in m) this._slider("metalness", 0, 1, 0.01, m.metalness, (v) => m.metalness = v);
@@ -292,6 +297,7 @@ export const DevMode = {
       this._btn("📷 Screenshot", () => this._screenshot()),
       this._btn("📷 No-HUD shot", () => this._screenshotClean()),
     ]);
+    this._grid([this._btn("🎬 Cinematic tour (through views)", () => this._tour())]);
     const bl = $(`<div class="dv-list"></div>`); (State.settings.devCamBookmarks || []).forEach((bm, i) => { const it = $(`<button class="dv-it">🎥 view ${i + 1}</button>`); it.onclick = () => this._loadBookmark(bm); bl.append(it); }); this.body.append(bl);
     const pos = cam ? `${cam.position.x.toFixed(2)}, ${cam.position.y.toFixed(2)}, ${cam.position.z.toFixed(2)}` : "-";
     this.body.append($(`<div class="dv-mono">cam: ${pos}</div>`));
@@ -320,6 +326,12 @@ export const DevMode = {
       this._btn("Look at me", () => { try { a.lookAtPoint?.(this.ctx.camera.position); } catch {} }),
     ]);
     this._text("Swap model URL (.vrm/.glb)", "", (u) => u && State.set("customModelUrl", u), "https://…");
+    this._h("Record / replay");
+    this._grid([this._btn(this._recording ? "⏹ Stop rec" : "⏺ Record", () => this._record(), this._recording ? "hot" : ""), this._btn("▶ Replay", () => this._replay())]);
+    this._h("Pose (bones)");
+    const hum = this._humanoid();
+    if (hum) [["leftUpperArm", "L arm z"], ["rightUpperArm", "R arm z"], ["head", "head y"], ["spine", "spine x"]].forEach(([bone, label]) => { const node = hum.getNormalizedBoneNode?.(bone); if (node) { const ax = label.slice(-1); this._slider(label, -1.5, 1.5, 0.02, node.rotation[ax], (v) => node.rotation[ax] = v); } });
+    else this.body.append($(`<i class="dv-dim">load a VRM (she is one by default) to pose bones</i>`));
   },
 
   // ============================================================ UI
@@ -336,6 +348,11 @@ export const DevMode = {
     vars.forEach(([v, def]) => this._color(v, (cs.getPropertyValue(v).trim() || def), (c) => document.documentElement.style.setProperty(v, c)));
     this._h("UI scale");
     this._slider("root font", 12, 22, 0.5, parseFloat(getComputedStyle(document.documentElement).fontSize) || 16, (v) => document.documentElement.style.fontSize = v + "px");
+    this._h("Advanced");
+    this._grid([
+      this._btn(this._hudDrag ? "Drag HUD: ON" : "Drag HUD panels", () => this._dragHUD(), this._hudDrag ? "hot" : ""),
+      this._btn(this._css ? "CSS inspect: ON" : "CSS inspector", () => this._cssInspect(), this._css ? "hot" : ""),
+    ]);
     this._h("Dev panel");
     this._grid([this._btn("Toggle panel theme", () => this._panelTheme())]);
   },
@@ -412,6 +429,8 @@ export const DevMode = {
       this._btn("Shadows toggle", () => { if (r) { r.shadowMap.enabled = !r.shadowMap.enabled; } }),
       this._btn("PostFX toggle", () => { try { window.CMF.PostFX.enabled = !window.CMF.PostFX.enabled; } catch {} }),
     ]);
+    this._h("FPS cap");
+    this._grid([this._btn("Off", () => this._cap(0), !this._fpsCap ? "hot" : ""), this._btn("30", () => this._cap(30), this._fpsCap === 30 ? "hot" : ""), this._btn("60", () => this._cap(60), this._fpsCap === 60 ? "hot" : "")]);
     this._perfBody();
   },
 
@@ -605,6 +624,7 @@ export const DevMode = {
     if (this._measuring) { (this._measPts ||= []).push(hit.point.clone()); if (this._measPts.length === 2) { const d = this._measPts[0].distanceTo(this._measPts[1]); this._drawMeasure(this._measPts[0], this._measPts[1]); this._status("distance: " + d.toFixed(2) + " m"); this._measPts = []; } else this._status("measure: first point set — click the second"); return; }
     let o = hit.object; while (o.parent && o.parent !== this.ctx.scene && !o.name) o = o.parent;
     if (o.userData.devLocked) { this._status("🔒 locked: " + (o.name || o.type)); return; }
+    if (e.shiftKey) { (this._multi ||= []); if (!this._multi.includes(o)) this._multi.push(o); this._status("multi: " + this._multi.length + " selected"); if (this._curTab === "object") this._tab("object"); return; }
     this._select(o);
   },
   _drawMeasure(a, b) { if (this._measLine) this.ctx.scene.remove(this._measLine); this._measLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: 0x39ff88 })); this.ctx.scene.add(this._measLine); },
@@ -692,6 +712,42 @@ export const DevMode = {
   _addPin(point) { const text = prompt("Pin note here:"); if (text == null) return; const s = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 12), new THREE.MeshBasicMaterial({ color: 0xffd447 })); s.position.copy(point); s.userData.pinText = text; s.name = "pin"; this.ctx.scene.add(s); (this._pins ||= []).push(s); this._saveNote(`[PIN @ ${point.x.toFixed(1)},${point.y.toFixed(1)},${point.z.toFixed(1)}] ${text}`); this._status("pin dropped + noted"); },
   _panelTheme() { this.panel.classList.toggle("dv-light"); this._status("panel theme toggled"); },
 
+  // ---- recent colors / favorites / share ----
+  _rec(c) { this._recent = [c, ...(this._recent || []).filter((x) => x !== c)].slice(0, 8); },
+  _recentRow(fn) { if (!this._recent?.length) return; const r = $(`<div class="dv-swatches"></div>`); this._recent.forEach((c) => { const s = $(`<button class="dv-sw" style="background:${c}"></button>`); s.onclick = () => fn(c); r.append(s); }); this.body.append(r); },
+  _fav() { if (!this.sel?.name) return; const f = (State.settings.devFavs ||= []); if (!f.includes(this.sel.name)) f.push(this.sel.name); State.save?.(); this._status("★ " + this.sel.name); this._tab(this._curTab); },
+  _favBar() { const f = State.settings.devFavs || []; if (!f.length) return; this._h("★ Favorites"); this._grid(f.slice(0, 8).map((n) => this._btn("★ " + n, () => { let hit = null; this.ctx.scene.traverse((o) => { if (o.name === n && !hit) hit = o; }); hit ? this._select(hit) : this._status("gone: " + n); }))); },
+  _share() { const url = location.origin + location.pathname; try { navigator.clipboard.writeText(url); this._status("live link copied ♡"); } catch { prompt("Share link:", url); } },
+
+  // ---- camera tour / multi-select / cap-fps ----
+  _tour() { const bm = State.settings.devCamBookmarks || []; if (bm.length < 2) return this._status("save 2+ views first"); let i = 0; const go = () => { if (i >= bm.length || !this.on) return; this._loadBookmark(bm[i]); i++; setTimeout(go, 2600); }; go(); this._status("cinematic tour…"); },
+  _multiNudge(ax, d) { const arr = this._multi || []; if (!arr.length) return this._status("shift-click objects first"); arr.forEach((o) => o.position[ax] += d); this._status("nudged " + arr.length); },
+  _clearMulti() { this._multi = []; this._status("multi cleared"); this._tab("object"); },
+  _cap(v) { this._fpsCap = v || 0; this._status(v ? "capped " + v + " fps" : "uncapped"); this._tab("perf"); },
+
+  // ---- record / replay Alice ----
+  _record() { if (this._recording) { this._recording = false; this._status("recorded " + (this._rec?.length || 0) + " frames"); } else { this._rec = []; this._recording = true; this._recT = 0; this._status("recording Alice — move her around"); } this._tab("alice"); },
+  _replay() { if (!(this._rec || []).length) return this._status("nothing recorded"); this._replaying = true; this._replayI = 0; this._status("replaying Alice"); },
+
+  // ---- drag HUD / CSS inspector ----
+  _dragHUD() {
+    this._hudDrag = !this._hudDrag;
+    const sels = ["#hud", "#chatDock", ".hud-right", "#fps", "#phoneFab"];
+    if (this._hudDrag) { this._hudH = []; sels.forEach((s) => { const el = document.querySelector(s); if (el) { const h = (e) => this._startDrag(e, el); el.addEventListener("pointerdown", h); this._hudH.push([el, h]); el.style.cursor = "move"; } }); }
+    else { (this._hudH || []).forEach(([el, h]) => { el.removeEventListener("pointerdown", h); el.style.cursor = ""; }); }
+    this._tab("ui");
+  },
+  _startDrag(e, el) { if (!this._hudDrag) return; e.preventDefault(); e.stopPropagation(); const r = el.getBoundingClientRect(); const ox = e.clientX - r.left, oy = e.clientY - r.top; el.style.position = "fixed"; el.style.right = "auto"; el.style.bottom = "auto"; el.style.left = r.left + "px"; el.style.top = r.top + "px"; const mv = (ev) => { el.style.left = (ev.clientX - ox) + "px"; el.style.top = (ev.clientY - oy) + "px"; }; const up = () => { removeEventListener("pointermove", mv); removeEventListener("pointerup", up); }; addEventListener("pointermove", mv); addEventListener("pointerup", up); },
+  _cssInspect() { this._css = !this._css; if (this._css) { this._cssH = (e) => this._cssPick(e); document.addEventListener("click", this._cssH, true); document.body.classList.add("dev-uiedit"); } else { document.removeEventListener("click", this._cssH, true); document.body.classList.remove("dev-uiedit"); } this._tab("ui"); },
+  _cssPick(e) {
+    const t = e.target; if (this.panel.contains(t) || t.closest("#devPanel,#devBtn,#dvCss")) return; e.preventDefault(); e.stopPropagation();
+    document.getElementById("dvCss")?.remove();
+    const cs = getComputedStyle(t); const box = $(`<div id="dvCss"><b>${t.tagName.toLowerCase()}${t.id ? "#" + t.id : ""}</b></div>`);
+    ["color", "background-color", "font-size", "padding", "border-radius", "opacity", "display"].forEach((p) => { const row = $(`<div class="dv-kv"><label>${p}</label></div>`); const i = $(`<input value="${cs.getPropertyValue(p)}">`); i.onchange = () => t.style.setProperty(p, i.value); row.append(i); box.append(row); });
+    const x = $(`<button class="dv-b">close</button>`); x.onclick = () => box.remove(); box.append(x); document.body.append(box);
+  },
+  _humanoid() { return this.ctx.akuu?.custom?.vrm?.humanoid || this.ctx.akuu?.vrm?.humanoid || null; },
+
   // ---------------- AUDIO tab ----------------
   _tab_audio() {
     const A = window.CMF?.Audio; const s = State.settings;
@@ -745,6 +801,9 @@ export const DevMode = {
     if (this._cycle) { State.world.timeOfDay = ((State.world.timeOfDay || 12) + dt * (this._cycleSpeed || 1) * 0.4) % 24; try { window.CMF.Atmosphere?.setTime?.(State.world.timeOfDay); window.CMF.PostFX?.setTime?.(State.world.timeOfDay); } catch {} }
     // simple physics drop (gravity + floor bounce)
     if (this._phys?.length) { for (const b of this._phys) { b.vy -= 9.8 * dt; b.o.position.y += b.vy * dt; if (b.o.position.y <= 0) { b.o.position.y = 0; b.vy = -b.vy * 0.45; if (Math.abs(b.vy) < 0.4) b.settled = true; } } this._phys = this._phys.filter((b) => !b.settled); }
+    // record / replay Alice's movement
+    if (this._recording) { this._recT += dt; if (this._recT >= 0.08) { this._recT = 0; const a = this.ctx.akuu?.root; if (a) (this._rec ||= []).push({ p: a.position.toArray(), y: a.rotation.y }); if ((this._rec || []).length > 700) this._recording = false; } }
+    if (this._replaying) { const rec = this._rec || []; const f = rec[this._replayI++]; if (!f || this._replayI > rec.length) this._replaying = false; else { const a = this.ctx.akuu?.root; if (a) { a.position.fromArray(f.p); a.rotation.y = f.y; } } }
     // frame-time sampling for the graph
     (this._ft ||= []).push(dt * 1000); if (this._ft.length > 120) this._ft.shift();
   },
@@ -787,17 +846,17 @@ const FEATURES = [
   [1, "Perf", "draw calls / tris / memory HUD"], [1, "Perf", "pixel ratio + shadow + postfx toggles"], [1, "Scene", "grid + axes helpers"],
   [1, "Scene", "global wireframe"], [1, "Global", "hotkey toggle (F8 / backtick)"], [1, "Global", "persistent dev button"],
   // BIG — batch 2 (now live)
-  [0, "Object", "multi-select + group transform"], [0, "Scene", "drag-drop model files onto window"], [1, "Scene", "prefab library (save/spawn)"],
+  [1, "Object", "multi-select + group nudge"], [1, "Scene", "drag-drop model/image files"], [1, "Scene", "prefab library (save/spawn)"],
   [0, "Collision", "paint navmesh walkable/blocked"], [0, "Collision", "auto-rebuild BVH from edits"], [1, "Light", "light gizmos + shadow preview"],
   [0, "Look", "full color-grade curves editor"], [1, "Look", "weather/sky presets"], [1, "Material", "PBR texture-set uploader"],
-  [1, "Material", "material library + presets"], [1, "Image", "decal projection onto surfaces"], [0, "Camera", "cinematic keyframe timeline"],
-  [1, "Camera", "orbit-around-target dolly"], [0, "Alice", "pose editor (per-bone)"], [0, "Alice", "dialogue tree editor"],
-  [0, "Alice", "record/replay her actions"], [0, "UI", "drag to reposition HUD panels"], [0, "UI", "full CSS inspector"],
+  [1, "Material", "material library + presets"], [1, "Image", "decal projection onto surfaces"], [1, "Camera", "cinematic camera tour"],
+  [1, "Camera", "orbit-around-target dolly"], [1, "Alice", "per-bone pose sliders (VRM)"], [0, "Alice", "dialogue tree editor"],
+  [1, "Alice", "record / replay her movement"], [1, "UI", "drag to reposition HUD panels"], [1, "UI", "CSS inspector (click to edit)"],
   [1, "Notes", "pin notes to 3D locations"], [1, "Notes", "attach screenshot to a note"], [1, "Console", "command palette"],
   [1, "State", "rollback save-history snapshots"], [1, "Perf", "frame-time graph"], [1, "World", "hotspot editor integration"],
   [1, "World", "day/night auto-cycle"], [1, "World", "spawn NPC / other characters"], [1, "Audio", "per-channel mixer"],
   [1, "Audio", "trigger/preview SFX"], [1, "Physics", "gravity/bounce drop sandbox"], [1, "Export", "export edited scene to JSON"],
-  [0, "Export", "one-click share build"], [1, "World", "quest/event trigger tester"], [1, "AI", "prompt playground in-game"],
+  [1, "Export", "one-click share link"], [1, "World", "quest/event trigger tester"], [1, "AI", "prompt playground in-game"],
   // SMALL (30)
   [1, "small", "status line feedback"], [1, "small", "selected object highlighted in CMF.devSel"], [1, "small", "esc-safe hotkeys while typing"],
   [1, "small", "color pickers everywhere"], [1, "small", "sliders show live value"], [1, "small", "scene tree icons"],
@@ -807,6 +866,6 @@ const FEATURES = [
   [1, "small", "copy object as JSON"], [1, "small", "paste object"], [1, "small", "lock object"],
   [1, "small", "rename object inline"], [1, "small", "duplicate along axis"], [1, "small", "align to grid"],
   [1, "small", "measure tool"], [1, "small", "isolate selected"], [1, "small", "focus-on-double-click"],
-  [0, "small", "recent colors palette"], [0, "small", "favorite objects bar"], [1, "small", "snap increment setting"],
-  [0, "small", "toggle vsync/cap fps"], [1, "small", "screenshot with/without HUD"], [1, "small", "dark/light panel theme"],
+  [1, "small", "recent colors palette"], [1, "small", "favorite objects bar"], [1, "small", "snap increment setting"],
+  [1, "small", "cap fps (30/60)"], [1, "small", "screenshot with/without HUD"], [1, "small", "dark/light panel theme"],
 ];

@@ -756,4 +756,8 @@ body.dev-uiedit *{cursor:crosshair!important}
 #devPanel.dv-light .dv-tab{color:#6b6280}
 #devPanel.dv-light .dv-mono,#devPanel.dv-light .dv-field input,#devPanel.dv-light .dv-kv input,#devPanel.dv-light .dv-conin,#devPanel.dv-light .dv-ta,#devPanel.dv-light .dv-console{background:#fff;color:#2a2438;border-color:#d8cfe6}
 #devPanel.dv-light .dv-it{color:#3a2f4a}
+.dv-swatches{display:flex;gap:4px;flex-wrap:wrap;margin:2px 0 6px}
+.dv-sw{width:20px;height:20px;border-radius:5px;border:1px solid rgba(255,255,255,.25);cursor:pointer;padding:0}
+#dvCss{position:fixed;left:20px;bottom:20px;z-index:500;width:280px;max-width:90vw;background:#0c0a12;border:1px solid #33283f;border-radius:10px;padding:12px;box-shadow:0 16px 50px rgba(0,0,0,.6);color:#d7d2e2;font-family:var(--font)}
+#dvCss b{display:block;font-size:12px;color:#7dd3fc;margin-bottom:8px;font-family:ui-monospace,monospace}
 @media(max-width:600px){#devPanel{width:100vw}#devBtn{top:auto;bottom:150px;left:14px}#dvPalette{width:94vw}}

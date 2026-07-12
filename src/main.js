@@ -569,7 +569,11 @@ function step(fn, thisArg, dt, label, extra) {
   try { fn.call(thisArg, dt, extra); }
   catch (e) { if (!_loopWarned[label]) { _loopWarned[label] = 1; console.error(`[loop:${label}]`, e); } }
 }
+let _devLastFrame = 0;
 function loop() {
+  // Dev Mode FPS cap (optional throttle)
+  const _cap = DevMode._fpsCap;
+  if (_cap) { const now = performance.now(); if (now - _devLastFrame < 1000 / _cap - 1) { requestAnimationFrame(loop); return; } _devLastFrame = now; }
   const dt = Math.min(clock.getDelta(), 0.05);
 
   // auto time-of-day (slow)
