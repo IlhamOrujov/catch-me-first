@@ -802,4 +802,28 @@ body.dev-uiedit *{cursor:crosshair!important}
 .dvp-choices{display:flex;flex-direction:column;gap:7px}
 .dvp-c{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);color:#fff;border-radius:11px;padding:11px 15px;font:13px var(--font);cursor:pointer;text-align:left;transition:.14s}
 .dvp-c:hover{background:rgba(255,255,255,.3);transform:translateX(3px)}
+
+/* ── Live voice call ── */
+#liveVoiceBtn{position:fixed;right:20px;bottom:244px;z-index:24;width:52px;height:52px;border-radius:16px;border:1px solid var(--stroke);background:rgba(20,14,26,.82);backdrop-filter:blur(12px);font-size:23px;cursor:pointer;box-shadow:var(--shadow);transition:.2s}
+#liveVoiceBtn:hover{transform:translateY(-2px);background:var(--pink)}
+#liveVoiceBtn.on{background:#e11d48;color:#fff;border-color:transparent;animation:heartbeat 1.2s infinite}
+#liveVoice{position:fixed;inset:0;z-index:120;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%,rgba(40,20,55,.55),rgba(6,3,12,.86));backdrop-filter:blur(14px);opacity:0;pointer-events:none;transition:opacity .4s}
+#liveVoice.show{opacity:1;pointer-events:auto}
+.lv-inner{display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;padding:24px}
+.lv-orb{position:relative;width:160px;height:160px;display:flex;align-items:center;justify-content:center}
+.lv-orb:before{content:"";position:absolute;inset:34px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#ffd0e4,#ff7aa2 45%,#b06de0);box-shadow:0 0 50px rgba(255,120,160,.6);transition:background .3s,box-shadow .3s}
+.lv-orb i{position:absolute;inset:0;border-radius:50%;border:2px solid rgba(255,160,200,.4);animation:lvring 2.4s ease-out infinite;opacity:0}
+.lv-orb i:nth-child(2){animation-delay:.8s}.lv-orb i:nth-child(3){animation-delay:1.6s}
+@keyframes lvring{0%{transform:scale(.55);opacity:.7}100%{transform:scale(1.15);opacity:0}}
+#liveVoice[data-state="listen"] .lv-orb:before{background:radial-gradient(circle at 40% 35%,#cdf3ff,#5ad1ff 45%,#3a8fe0);box-shadow:0 0 60px rgba(90,209,255,.7);animation:lvpulse 1.4s ease-in-out infinite}
+#liveVoice[data-state="think"] .lv-orb:before{background:radial-gradient(circle at 40% 35%,#ffe9c0,#ffb84f 50%,#e0863a);animation:lvspin 1s linear infinite}
+#liveVoice[data-state="speak"] .lv-orb:before{animation:lvpulse .5s ease-in-out infinite}
+@keyframes lvpulse{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+@keyframes lvspin{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
+.lv-name{font-size:24px;font-weight:800;color:#fff}.lv-name span{color:var(--pink2)}
+.lv-status{font-size:14px;color:#ffd9e6;opacity:.9;min-height:18px}
+.lv-transcript{font-size:14px;color:#fff;opacity:.85;max-width:440px;min-height:22px;line-height:1.45}
+.lv-end{margin-top:10px;background:#e11d48;border:none;color:#fff;border-radius:99px;padding:11px 26px;font:700 13px var(--font);cursor:pointer}
+.lv-end:hover{filter:brightness(1.1)}
+@media(max-width:600px){#liveVoiceBtn{bottom:214px}}
 @media(max-width:600px){#devPanel{width:100vw}#devBtn{top:auto;bottom:150px;left:14px}#dvPalette{width:94vw}}
