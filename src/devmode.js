@@ -173,9 +173,9 @@ export const DevMode = {
     this._grid([
       this._btn("Snap to floor", () => { o.position.y = 0; }),
       this._btn(o.visible ? "Hide" : "Show", () => { o.visible = !o.visible; this._tab("object"); }),
-      this._btn("Duplicate", () => this._dup()),
       this._btn("Delete", () => this._del(), "danger"),
     ]);
+    this._grid([this._btn("Dup +X", () => this._dup("x")), this._btn("Dup +Y", () => this._dup("y")), this._btn("Dup +Z", () => this._dup("z"))]);
     // material
     const m = o.material && !Array.isArray(o.material) ? o.material : null;
     if (m) {
@@ -255,7 +255,10 @@ export const DevMode = {
     this.body.append($(`<i class="dv-dim">Drops a photo/poster as a plane in front of the camera.</i>`));
     let url = "";
     this._text("Image URL", "", (u) => url = u, "https://…​.jpg");
-    this._grid([this._btn("＋ Place image", () => url && this._addImage(url))]);
+    this._grid([
+      this._btn("＋ Place image", () => url && this._addImage(url)),
+      this._btn(this._decalMode ? "Decal: click a wall" : "🩹 Decal on surface", () => { this._decalUrl = url; this._decalMode = !!url && !this._decalMode; this._status(this._decalMode ? "click a wall/surface to stick it" : "enter a URL first / decal off"); this._tab("image"); }, this._decalMode ? "hot" : ""),
+    ]);
     if (this.sel && this.sel.material) {
       this._h("Apply image to selected");
       let t2 = "";
@@ -345,6 +348,7 @@ export const DevMode = {
     this.body.append(ta);
     this._grid([
       this._btn("💾 Save note", () => { const t = ta.value.trim(); if (t) { this._saveNote(t); ta.value = ""; } }),
+      this._btn("📷 Note + shot", () => { const t = ta.value.trim(); if (t) { this._saveNote(t + " [screenshot attached]"); this._screenshot(); ta.value = ""; } }),
       this._btn("⬇ Export .md", () => this._exportNotes()),
       this._btn("Clear", () => { if (confirm("Clear all saved notes?")) { this._notes = []; localStorage.removeItem("cmf.devnotes"); this._tab("notes"); } }, "danger"),
     ]);
@@ -462,7 +466,8 @@ export const DevMode = {
   _applyTexture(o, url) { new THREE.TextureLoader().load(url, (tex) => { if (o.material) { o.material.map = tex; o.material.needsUpdate = true; this._status("texture applied"); } }, undefined, () => this._status("texture failed")); },
   _placeInFront(o) { const cam = this.ctx.camera; const dir = new THREE.Vector3(); cam.getWorldDirection(dir); o.position.copy(cam.position).add(dir.multiplyScalar(2.5)); o.position.y = Math.max(0.3, o.position.y); },
 
-  _dup() { if (!this.sel) return; const c = this.sel.clone(true); if (this.sel.material) c.material = this.sel.material.clone?.() || this.sel.material; c.name = (this.sel.name || "obj") + "_copy"; c.position.x += 0.5; this.ctx.scene.add(c); this.added.push(c); this._select(c); },
+  _dup(axis = "x") { const o = this.sel; if (!o) return; const c = o.clone(true); if (o.material) c.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : (o.material.clone?.() || o.material); c.name = (o.name || "obj") + "_copy"; const sz = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3()); c.position[axis] += (sz[axis] || 0.6) + 0.05; this.ctx.scene.add(c); this.added.push(c); this._recordAdd(c); this._select(c); this._status("duplicated +" + axis); },
+  _placeDecal(hit) { if (!this._decalUrl) return; new THREE.TextureLoader().load(this._decalUrl, (tex) => { const ar = (tex.image?.width || 1) / (tex.image?.height || 1); const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.8 * ar, 0.8), new THREE.MeshBasicMaterial({ map: tex, transparent: true })); const n = hit.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : new THREE.Vector3(0, 0, 1); mesh.position.copy(hit.point).addScaledVector(n, 0.02); mesh.lookAt(hit.point.clone().add(n)); mesh.name = "decal_" + (this.added.length + 1); this.ctx.scene.add(mesh); this.added.push(mesh); this._recordAdd(mesh); this._status("decal placed"); }, undefined, () => this._status("decal image failed")); },
   _del() { const o = this.sel; if (!o) return; this._detach(); o.parent?.remove(o); o.geometry?.dispose?.(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose?.()); this.added = this.added.filter((x) => x !== o); this.sel = null; this._status("deleted"); this._tab(this._curTab); },
   _frame() { const o = this.sel; const cc = this.ctx.camCtl; if (!o || !cc?.flyTo) return; const p = new THREE.Vector3(); o.getWorldPosition(p); cc.flyTo(p.clone().add(new THREE.Vector3(2, 1.5, 2)), p.clone()); },
 
@@ -595,6 +600,7 @@ export const DevMode = {
     const ray = new THREE.Raycaster(); ray.setFromCamera(m, this.ctx.camera);
     const hit = ray.intersectObjects(this.ctx.scene.children, true).find((h) => h.object.isMesh && h.object.visible);
     if (!hit) return;
+    if (this._decalMode) { this._placeDecal(hit); this._decalMode = false; if (this._curTab === "image") this._tab("image"); return; }
     if (this._pinning) { this._addPin(hit.point.clone()); this._pinning = false; return; }
     if (this._measuring) { (this._measPts ||= []).push(hit.point.clone()); if (this._measPts.length === 2) { const d = this._measPts[0].distanceTo(this._measPts[1]); this._drawMeasure(this._measPts[0], this._measPts[1]); this._status("distance: " + d.toFixed(2) + " m"); this._measPts = []; } else this._status("measure: first point set — click the second"); return; }
     let o = hit.object; while (o.parent && o.parent !== this.ctx.scene && !o.name) o = o.parent;
@@ -784,10 +790,10 @@ const FEATURES = [
   [0, "Object", "multi-select + group transform"], [0, "Scene", "drag-drop model files onto window"], [1, "Scene", "prefab library (save/spawn)"],
   [0, "Collision", "paint navmesh walkable/blocked"], [0, "Collision", "auto-rebuild BVH from edits"], [1, "Light", "light gizmos + shadow preview"],
   [0, "Look", "full color-grade curves editor"], [1, "Look", "weather/sky presets"], [1, "Material", "PBR texture-set uploader"],
-  [1, "Material", "material library + presets"], [0, "Image", "decal projection onto walls"], [0, "Camera", "cinematic keyframe timeline"],
+  [1, "Material", "material library + presets"], [1, "Image", "decal projection onto surfaces"], [0, "Camera", "cinematic keyframe timeline"],
   [1, "Camera", "orbit-around-target dolly"], [0, "Alice", "pose editor (per-bone)"], [0, "Alice", "dialogue tree editor"],
   [0, "Alice", "record/replay her actions"], [0, "UI", "drag to reposition HUD panels"], [0, "UI", "full CSS inspector"],
-  [1, "Notes", "pin notes to 3D locations"], [0, "Notes", "attach screenshot to a note"], [1, "Console", "command palette"],
+  [1, "Notes", "pin notes to 3D locations"], [1, "Notes", "attach screenshot to a note"], [1, "Console", "command palette"],
   [1, "State", "rollback save-history snapshots"], [1, "Perf", "frame-time graph"], [1, "World", "hotspot editor integration"],
   [1, "World", "day/night auto-cycle"], [1, "World", "spawn NPC / other characters"], [1, "Audio", "per-channel mixer"],
   [1, "Audio", "trigger/preview SFX"], [1, "Physics", "gravity/bounce drop sandbox"], [1, "Export", "export edited scene to JSON"],
@@ -799,7 +805,7 @@ const FEATURES = [
   [1, "small", "console history scroll"], [1, "small", "feature counter"], [1, "small", "camera position readout"],
   [1, "small", "keyboard shortcut cheat-sheet"], [1, "small", "undo last edit"], [1, "small", "redo"],
   [1, "small", "copy object as JSON"], [1, "small", "paste object"], [1, "small", "lock object"],
-  [1, "small", "rename object inline"], [0, "small", "duplicate along axis"], [1, "small", "align to grid"],
+  [1, "small", "rename object inline"], [1, "small", "duplicate along axis"], [1, "small", "align to grid"],
   [1, "small", "measure tool"], [1, "small", "isolate selected"], [1, "small", "focus-on-double-click"],
   [0, "small", "recent colors palette"], [0, "small", "favorite objects bar"], [1, "small", "snap increment setting"],
   [0, "small", "toggle vsync/cap fps"], [1, "small", "screenshot with/without HUD"], [1, "small", "dark/light panel theme"],
