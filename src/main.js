@@ -39,6 +39,7 @@ import { Episodes } from "./memories.js";
 import { Director } from "./director.js";
 import { LiveFace } from "./liveface.js";
 import { OfflineLife } from "./offlinelife.js";
+import { WorldBuilder } from "./worldbuilder.js";
 import { Mapper } from "./mapper.js";
 import { PostFX } from "./postfx.js";
 import { Atmosphere } from "./atmosphere.js";
@@ -233,6 +234,7 @@ Episodes.init({ brain: Brain, akuu, ui: UI });
 Director.init({ akuu, camCtl, runAbility: (id, a) => runAbility(id, a, ctx) });
 LiveFace.init({ akuu, emotion: Emotion });
 OfflineLife.init({ phone: Phone, ui: UI });
+WorldBuilder.init({ scene, dorm, brain: Brain, ui: UI });
 Reflection.init({ brain: Brain, ui: UI, get magic() { return ctx.magic; }, get lifesim() { return ctx.lifesim; } });
 ctx.reflection = Reflection;
 HudMenu.init();   // gather the tool buttons behind one ☰ menu (observer catches late ones)
@@ -602,6 +604,7 @@ function loop() {
   step(updateFx, null, dt, "fx");
   step(camCtl.update, camCtl, dt, "cam");
   if (DevMode.on) step(DevMode.update, DevMode, dt, "dev");
+  if (WorldBuilder._pts) step(WorldBuilder.update, WorldBuilder, dt, "world");
   step(Atmosphere.update, Atmosphere, dt, "atmo");
   // soft footsteps as she walks
   if (akuu?.isWalking?.() && akuu._movedThisFrame !== false) { _stepT += dt; if (_stepT > 0.42) { _stepT = 0; Ambient.footstep(); } } else _stepT = 0.42;
@@ -638,5 +641,5 @@ document.querySelectorAll("[data-cammode]").forEach((b) =>
   b.addEventListener("click", () => camCtl.setMode(b.dataset.cammode)));
 
 // expose for debugging / admin console
-window.CMF = { State, dorm, akuu, Brain, UI, Audio, ctx, cameraFx, camera, controls: camCtl.orbit, camCtl, scene, Emotion, Studio, RAG, Lifesim, Phone, Build, Story, Minigames, Mobile, PostFX, Atmosphere, Ambient, Icons, DevMode, LiveVoice, Episodes, Director, LiveFace, OfflineLife };
+window.CMF = { State, dorm, akuu, Brain, UI, Audio, ctx, cameraFx, camera, controls: camCtl.orbit, camCtl, scene, Emotion, Studio, RAG, Lifesim, Phone, Build, Story, Minigames, Mobile, PostFX, Atmosphere, Ambient, Icons, DevMode, LiveVoice, Episodes, Director, LiveFace, OfflineLife, WorldBuilder };
 console.log("%cCatch Me First ♡", "font-size:20px;color:#ff6ba6", "— Akuu is awake. Set your Groq key in ⚙️.");

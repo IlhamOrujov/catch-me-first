@@ -53,9 +53,11 @@ export const Atmosphere = {
     const scene = this.refs.scene;
     // drift the sky/fog toward the current hour's colour
     const col = skyColor(State.world.timeOfDay);
-    if (!scene.background || !scene.background.isColor) scene.background = new THREE.Color("#07071a");
-    scene.background.lerp(col, Math.min(1, dt * 0.6));
-    if (scene.fog) scene.fog.color.copy(scene.background);
+    if (!State.world.skyLock) {   // World Builder can pin a custom sky/fog
+      if (!scene.background || !scene.background.isColor) scene.background = new THREE.Color("#07071a");
+      scene.background.lerp(col, Math.min(1, dt * 0.6));
+      if (scene.fog) scene.fog.color.copy(scene.background);
+    }
     // float the dust
     if (this.enabled && this.dust) {
       const p = this.dust.geometry.attributes.position, t = performance.now() * 0.0003;

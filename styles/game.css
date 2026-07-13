@@ -884,4 +884,23 @@ body.dev-uiedit *{cursor:crosshair!important}
 .ar-list li:before{content:"♡";position:absolute;left:0;color:var(--pink2)}
 .ar-btn{background:linear-gradient(135deg,#ff7aa2,#b06de0);border:none;color:#fff;border-radius:99px;padding:11px 26px;font:700 13px var(--font);cursor:pointer;width:100%}
 .ar-btn:hover{filter:brightness(1.1)}
+
+/* ── World Builder ── */
+#worldBuilder{position:fixed;right:16px;top:70px;width:322px;max-width:92vw;max-height:calc(100dvh - 90px);z-index:30;background:linear-gradient(180deg,rgba(22,14,28,.96),rgba(14,9,18,.96));backdrop-filter:blur(16px);border:1px solid var(--stroke);border-radius:20px;box-shadow:var(--shadow);display:none;flex-direction:column;overflow:hidden;font-family:var(--font);color:var(--text)}
+#worldBuilder.open{display:flex;animation:phin .3s}
+.wb-head{display:flex;align-items:center;justify-content:space-between;padding:13px 15px 4px}
+.wb-head b{font-size:16px;background:linear-gradient(90deg,#ff9ec2,#c9a3ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+.wb-x{background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer}.wb-x:hover{color:#fff}
+.wb-hint{padding:0 15px 10px;font-size:11px;color:var(--muted)}
+.wb-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:0 14px 10px;overflow-y:auto}
+.wb-p{background:rgba(255,255,255,.06);border:1px solid var(--stroke);color:var(--text);border-radius:12px;padding:11px 6px;font:600 11.5px var(--font);cursor:pointer;transition:.14s}
+.wb-p:hover{background:var(--pink);color:#fff;transform:translateY(-1px)}
+.wb-desc{display:flex;gap:6px;padding:8px 14px;border-top:1px solid var(--stroke)}
+.wb-desc input{flex:1;min-width:0;background:#08060d;border:1px solid var(--stroke);color:var(--text);border-radius:99px;padding:9px 13px;font:12px var(--font);outline:none}
+.wb-desc input:focus{border-color:var(--pink)}
+.wb-desc button{width:38px;border:none;border-radius:50%;background:var(--pink);color:#fff;font-size:15px;cursor:pointer;flex-shrink:0}
+.wb-reset{margin:4px 14px 4px;background:rgba(255,255,255,.05);border:1px solid var(--stroke);color:var(--muted);border-radius:10px;padding:9px;font:12px var(--font);cursor:pointer}
+.wb-reset:hover{color:#fff}
+.wb-status{padding:2px 15px 12px;font-size:11px;color:var(--pink2);min-height:14px}
+@media(max-width:600px){#worldBuilder{right:8px;left:8px;width:auto;top:auto;bottom:8px;max-height:80dvh}}
 @media(max-width:600px){#devPanel{width:100vw}#devBtn{top:auto;bottom:150px;left:14px}#dvPalette{width:94vw}}
