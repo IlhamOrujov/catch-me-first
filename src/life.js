@@ -105,6 +105,7 @@ export class Life {
     const pp = this._playerPos();
     State.world.playerPos = { x: +pp.x.toFixed(2), z: +pp.z.toFixed(2) };
 
+    if (State.world.outing) { try { this._playerReactions(dt); } catch {} return; }   // on a date — no autonomous wandering
     if (this.state === "away") { this._awayTick(dt); return; }   // she's out of the apartment
 
     // passive life always on (blink handled in akuu; here: look-at + subtle)

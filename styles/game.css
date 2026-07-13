@@ -925,5 +925,20 @@ body.dev-uiedit *{cursor:crosshair!important}
 .sm-c{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:12px;padding:12px 16px;font:13px var(--font);cursor:pointer;text-align:left;transition:.14s}
 .sm-c:hover{background:linear-gradient(135deg,rgba(255,122,162,.5),rgba(176,109,224,.5));border-color:var(--pink);transform:translateX(4px)}
 .sm-flash{position:absolute;top:22%;left:50%;transform:translateX(-50%);background:rgba(74,222,128,.16);border:1px solid #4ade80;color:#4ade80;border-radius:99px;padding:8px 18px;font:700 13px var(--font);animation:phin .3s;pointer-events:none}
+
+/* ── Step outside (outings) ── */
+#outFade{position:fixed;inset:0;z-index:130;background:#000;opacity:0;pointer-events:none;transition:opacity .55s}
+#outFade.on{opacity:1;pointer-events:auto}
+#outMenu{position:fixed;inset:0;z-index:126;display:none;align-items:center;justify-content:center;background:rgba(6,3,12,.5);backdrop-filter:blur(6px)}
+#outMenu.show{display:flex;animation:phin .3s}
+.om-card{position:relative;width:340px;max-width:92vw;background:linear-gradient(180deg,rgba(26,16,34,.98),rgba(14,9,18,.98));border:1px solid var(--stroke);border-radius:22px;padding:24px 22px 20px;box-shadow:0 24px 70px rgba(0,0,0,.6);text-align:center}
+.om-t{font-size:19px;font-weight:800;background:linear-gradient(90deg,#ff9ec2,#c9a3ff);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:16px}
+.om-b{display:block;width:100%;margin-bottom:8px;background:rgba(255,255,255,.06);border:1px solid var(--stroke);color:var(--text);border-radius:14px;padding:14px;font:600 14px var(--font);cursor:pointer;transition:.14s}
+.om-b:hover{background:var(--pink);color:#fff;transform:translateY(-2px)}
+.om-b[disabled]{opacity:.4;pointer-events:none}
+.om-b.home{background:rgba(255,255,255,.03);color:var(--muted)}
+.om-x{position:absolute;top:12px;right:14px;background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer}.om-x:hover{color:#fff}
+#outLabel{position:fixed;top:16%;left:50%;transform:translateX(-50%) translateY(-10px);z-index:124;font:800 26px var(--font);color:#fff;text-shadow:0 4px 30px rgba(255,150,190,.5);opacity:0;transition:opacity .5s,transform .5s;pointer-events:none;text-align:center}
+#outLabel.show{opacity:1;transform:translateX(-50%) translateY(0)}
 @media(max-width:600px){.sm-menu{width:94vw}.sm-cardt{font-size:23px}}
 @media(max-width:600px){#devPanel{width:100vw}#devBtn{top:auto;bottom:150px;left:14px}#dvPalette{width:94vw}}
